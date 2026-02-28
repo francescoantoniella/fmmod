@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FM Processor</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Barlow+Condensed:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:         #080b0b;
+  --bg2:        #0d1212;
+  --panel:      #0f1515;
+  --panel2:     #131a1a;
+  --border:     #1a2222;
+  --border2:    #222e2e;
+  --text:       #b8cccc;
+  --text-dim:   #3a5050;
+  --text-mid:   #6a8888;
+  --green:      #00e5aa;
+  --green-dim:  #004433;
+  --yellow:     #f5c400;
+  --red:        #ff2d55;
+  --red-dim:    #440010;
+  --blue:       #00c8f0;
+  --blue-dim:   #003344;
+  --orange:     #ff7d2a;
+  --purple:     #b060ff;
+  --mono:       'Share Tech Mono', monospace;
+  --orb:        'Orbitron', sans-serif;
+  --cond:       'Barlow Condensed', sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--cond);font-size:13px;min-height:100vh;overflow-x:hidden}
+
+/* ── SCANLINE overlay ── */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.08) 2px,rgba(0,0,0,.08) 4px);
+}
+
+/* ── TOP BAR ── */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 20px;background:var(--panel2);
+  border-bottom:1px solid var(--border2);
+  position:sticky;top:0;z-index:100;
+}
+.logo{font-family:var(--orb);font-size:18px;font-weight:900;letter-spacing:4px;
+  color:var(--blue);text-shadow:0 0 20px rgba(0,200,240,.4);}
+.logo em{color:var(--text-dim);font-style:normal;font-weight:400}
+.topbar-center{display:flex;gap:20px;align-items:center}
+.freq-display{
+  font-family:var(--mono);font-size:22px;color:var(--green);
+  text-shadow:0 0 12px rgba(0,229,170,.5);letter-spacing:2px;
+}
+.freq-display span{font-size:11px;color:var(--text-dim);margin-left:4px}
+.topbar-right{display:flex;gap:12px;align-items:center}
+.status-chip{
+  display:flex;align-items:center;gap:6px;padding:4px 10px;
+  background:var(--bg2);border:1px solid var(--border2);border-radius:2px;
+  font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--text-mid);
+}
+.status-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 6px var(--green);animation:pulse 2s ease-in-out infinite}
+.status-chip.alarm .dot{background:var(--red);box-shadow:0 0 8px var(--red);animation:blink .5s step-end infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* ── TABS ── */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border2);background:var(--panel);padding:0 20px}
+.tab{
+  padding:10px 20px;cursor:pointer;font-family:var(--cond);font-size:11px;
+  letter-spacing:3px;text-transform:uppercase;color:var(--text-dim);
+  border-bottom:2px solid transparent;transition:all .2s;
+}
+.tab:hover{color:var(--text-mid)}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+
+/* ── CONTENT ── */
+.page{display:none;padding:16px 20px;animation:fadein .2s ease}
+.page.active{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ── GRID LAYOUTS ── */
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.col-span-2{grid-column:span 2}
+.col-span-3{grid-column:span 3}
+
+/* ── PANEL ── */
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;overflow:hidden}
+.panel-hdr{
+  padding:7px 14px;background:var(--panel2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.panel-title{font-family:var(--cond);font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--text-dim)}
+.panel-body{padding:14px}
+
+/* ── BIG METRIC ── */
+.big-metric{text-align:center;padding:10px 6px}
+.big-val{font-family:var(--mono);font-size:42px;line-height:1;letter-spacing:-1px}
+.big-val.green{color:var(--green);text-shadow:0 0 16px rgba(0,229,170,.4)}
+.big-val.yellow{color:var(--yellow);text-shadow:0 0 12px rgba(245,196,0,.4)}
+.big-val.red{color:var(--red);text-shadow:0 0 16px rgba(255,45,85,.5)}
+.big-unit{font-family:var(--mono);font-size:8px;color:var(--text-dim);letter-spacing:3px;margin-top:4px}
+
+/* ── VU METER ── */
+.vu-wrap{position:relative;height:8px;background:var(--bg2);border:1px solid var(--border);border-radius:1px;overflow:hidden}
+.vu-fill{height:100%;border-radius:1px;transition:width .08s ease-out}
+.vu-fill.green{background:linear-gradient(to right,var(--green-dim),var(--green))}
+.vu-fill.red{background:linear-gradient(to right,rgba(255,45,85,.3),var(--red))}
+.vu-label{display:flex;justify-content:space-between;font-family:var(--mono);font-size:8px;color:var(--text-dim);margin-top:3px}
+
+/* ── VBAR ── */
+.vbar-section{display:flex;gap:8px;height:120px;align-items:flex-end}
+.vbar-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
+.vbar-col-lbl{font-family:var(--mono);font-size:7px;color:var(--text-dim);letter-spacing:1px}
+.vbar-track{flex:1;width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:1px;position:relative;overflow:hidden}
+.vbar-bar{position:absolute;bottom:0;left:1px;right:1px;border-radius:1px 1px 0 0;transition:height .08s ease-out}
+.vbar-bar.g{background:linear-gradient(to top,var(--green-dim),var(--green))}
+.vbar-bar.r{position:absolute;top:0;bottom:auto;border-radius:0 0 1px 1px;background:linear-gradient(to bottom,rgba(255,45,85,.3),var(--red))}
+.vbar-num{font-family:var(--mono);font-size:9px;color:var(--text)}
+
+/* ── SLIDER CONTROL ── */
+.ctrl-item{display:flex;flex-direction:column;gap:5px}
+.ctrl-lbl{display:flex;justify-content:space-between;align-items:baseline;
+  font-family:var(--cond);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+.ctrl-val{font-family:var(--mono);font-size:10px;color:var(--text)}
+input[type=range]{
+  -webkit-appearance:none;width:100%;height:2px;
+  background:var(--border2);border-radius:1px;outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:12px;height:12px;border-radius:50%;
+  background:var(--blue);box-shadow:0 0 0 2px var(--bg),0 0 8px var(--blue);
+  cursor:pointer;transition:transform .1s;
+}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
+.range-ends{display:flex;justify-content:space-between;font-family:var(--mono);font-size:7px;color:var(--text-dim)}
+
+/* ── TOGGLE ── */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.toggle-lbl{font-family:var(--cond);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+.toggle{position:relative;width:36px;height:18px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.tslider{position:absolute;inset:0;background:var(--border2);border-radius:9px;cursor:pointer;transition:.2s;border:1px solid var(--border2)}
+.tslider::before{content:'';position:absolute;width:12px;height:12px;left:2px;top:2px;background:var(--text-dim);border-radius:50%;transition:.2s}
+.toggle input:checked+.tslider{background:#002a1a;border-color:var(--green-dim)}
+.toggle input:checked+.tslider::before{transform:translateX(17px);background:var(--green);box-shadow:0 0 6px var(--green)}
+
+/* ── ALARM BOX ── */
+.alarm-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.alarm-chip{
+  padding:4px 10px;border-radius:2px;font-family:var(--mono);font-size:9px;
+  letter-spacing:1px;border:1px solid var(--border2);color:var(--text-dim);
+  background:var(--bg2);transition:.3s;
+}
+.alarm-chip.active{background:var(--red-dim);border-color:var(--red);color:var(--red);
+  box-shadow:0 0 10px rgba(255,45,85,.2);animation:blink .8s step-end infinite}
+
+/* ── CURVE CANVAS ── */
+.curve-canvas{display:block;width:100%;aspect-ratio:1;background:#060909;border:1px solid var(--border);border-radius:2px;cursor:crosshair}
+
+/* ── INPUT TEXT ── */
+.txt-input{
+  background:var(--bg2);border:1px solid var(--border2);border-radius:2px;
+  color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px;
+  width:100%;outline:none;transition:border .2s;
+}
+.txt-input:focus{border-color:var(--blue)}
+
+/* ── BUTTON ── */
+.btn{
+  padding:7px 16px;background:transparent;border:1px solid var(--border2);
+  color:var(--text-mid);font-family:var(--cond);font-size:10px;
+  letter-spacing:2px;text-transform:uppercase;cursor:pointer;
+  border-radius:2px;transition:all .15s;
+}
+.btn:hover{border-color:var(--blue);color:var(--blue)}
+.btn.primary{border-color:var(--green);color:var(--green)}
+.btn.primary:hover{background:var(--green-dim)}
+.btn.danger{border-color:var(--red);color:var(--red)}
+.btn.danger:hover{background:var(--red-dim)}
+.btn.warn{border-color:var(--yellow);color:var(--yellow)}
+
+/* ── DIVIDER ── */
+.divider{height:1px;background:var(--border);margin:10px 0}
+
+/* ── HISTORY CANVAS ── */
+.hist-canvas{display:block;width:100%;height:120px;background:var(--bg2);border:1px solid var(--border)}
+
+/* ── SOFTSTART INDICATOR ── */
+.softstart-bar{height:4px;background:var(--bg2);border:1px solid var(--border);border-radius:1px;overflow:hidden;margin-top:6px}
+.softstart-fill{height:100%;background:linear-gradient(to right,var(--blue-dim),var(--blue));width:0%;transition:width .15s}
+
+/* ── PID PARAMS ── */
+.pid-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+
+/* ── SEPARATOR ROW ── */
+.sep-row{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:4px 0}
+.sep-row::before,.sep-row::after{content:'';flex:1;height:1px;background:var(--border)}
+.sep-row span{font-family:var(--cond);font-size:8px;letter-spacing:3px;color:var(--text-dim)}
+
+/* ── TOOLTIP ── */
+.tt{position:relative;cursor:help}
+.tt::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);
+  background:#1a2222;border:1px solid var(--border2);color:var(--text-mid);
+  font-family:var(--mono);font-size:8px;padding:4px 8px;white-space:nowrap;border-radius:2px;
+  opacity:0;pointer-events:none;transition:.15s;z-index:200}
+.tt:hover::after{opacity:1}
+
+/* ── SECTION GAP ── */
+.gap{margin-top:12px}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo">FM<em>/</em>PROC</div>
+  <div class="topbar-center">
+    <div class="freq-display" id="top-freq">100.000<span>MHz</span></div>
+  </div>
+  <div class="topbar-right">
+    <div class="status-chip" id="chip-conn"><div class="dot"></div>ONLINE</div>
+    <div class="status-chip" id="chip-alarm" style="display:none"><div class="dot" style="background:var(--red)"></div>ALLARME</div>
+    <div class="status-chip" id="chip-mute" style="display:none"><div class="dot" style="background:var(--yellow)"></div>MUTE</div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab active" onclick="showTab('tx')">TX / RDS</div>
+  <div class="tab" onclick="showTab('comp')">Compressore</div>
+  <div class="tab" onclick="showTab('power')">Potenza / RF</div>
+  <div class="tab" onclick="showTab('history')">Storico</div>
+  <div class="tab" onclick="showTab('system')">Sistema</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ TAB TX ═══ -->
+<div class="page active" id="tab-tx">
+  <div class="grid-3">
+
+    <!-- Metering MPX -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">MPX Output</span></div>
+      <div class="panel-body">
+        <div class="big-metric">
+          <div class="big-val green" id="mpx-peak-val">0.00</div>
+          <div class="big-unit">MPX PEAK</div>
+        </div>
+        <div style="margin-top:10px">
+          <div class="ctrl-lbl">Peak<span id="mpx-peak-num">0.000</span></div>
+          <div class="vu-wrap" style="margin-top:4px"><div class="vu-fill green" id="bar-mpx-peak" style="width:0%"></div></div>
+          <div class="vu-label"><span>0.0</span><span>0.5</span><span>1.0</span></div>
+          <div class="ctrl-lbl" style="margin-top:8px">RMS<span id="mpx-rms-num">0.000</span></div>
+          <div class="vu-wrap" style="margin-top:4px"><div class="vu-fill green" id="bar-mpx-rms" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TX Freq + Gain -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Trasmettitore</span></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:12px">
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">Frequenza TX<span class="ctrl-val" id="lbl-txfreq">100.0 MHz</span></div>
+          <input type="range" id="sl-txfreq" min="87.5" max="108.0" step="0.1" value="100.0"
+                 oninput="onTxParam('txfreq',+this.value)">
+          <div class="range-ends"><span>87.5</span><span>108.0 MHz</span></div>
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">TX Gain (HW)<span class="ctrl-val" id="lbl-txgain">−17 dB</span></div>
+          <input type="range" id="sl-txgain" min="-40" max="0" step="1" value="-17"
+                 oninput="onTxParam('txgain',+this.value)">
+          <div class="range-ends"><span>−40 dB</span><span>0 dB</span></div>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-lbl">Mute</span>
+          <label class="toggle"><input type="checkbox" id="tog-mute" onchange="sendCmd('MUTE='+(this.checked?'1':'0'))"><span class="tslider"></span></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audio levels -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Livelli MPX</span></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">Gain Ingresso<span class="ctrl-val" id="lbl-gain">0.0 dB</span></div>
+          <input type="range" id="sl-gain" min="-24" max="24" step="0.5" value="0"
+                 oninput="onTxParam('gain',+this.value)">
+          <div class="range-ends"><span>−24</span><span>+24 dB</span></div>
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">Pilot 19kHz<span class="ctrl-val" id="lbl-pilot">0.09</span></div>
+          <input type="range" id="sl-pilot" min="0.05" max="0.15" step="0.005" value="0.09"
+                 oninput="onTxParam('pilot',+this.value)">
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">Stereo (L−R)<span class="ctrl-val" id="lbl-stereo">0.44</span></div>
+          <input type="range" id="sl-stereo" min="0.1" max="0.6" step="0.01" value="0.44"
+                 oninput="onTxParam('stereo',+this.value)">
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">RDS 57kHz<span class="ctrl-val" id="lbl-rds">0.03</span></div>
+          <input type="range" id="sl-rds" min="0.01" max="0.08" step="0.005" value="0.03"
+                 oninput="onTxParam('rds',+this.value)">
+        </div>
+      </div>
+    </div>
+
+    <!-- Pre/De-enfasi -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Pre/De-enfasi</span></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">Pre-enfasi<span class="ctrl-val" id="lbl-preemph">OFF</span></div>
+          <input type="range" id="sl-preemph" min="0" max="75" step="25" value="0"
+                 oninput="onTxParam('preemph',+this.value)">
+          <div class="range-ends"><span>OFF</span><span>50 µs</span><span>75 µs</span></div>
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">De-enfasi<span class="ctrl-val" id="lbl-deemph">OFF</span></div>
+          <input type="range" id="sl-deemph" min="0" max="75" step="25" value="0"
+                 oninput="onTxParam('deemph',+this.value)">
+        </div>
+      </div>
+    </div>
+
+    <!-- RDS -->
+    <div class="panel col-span-2">
+      <div class="panel-hdr"><span class="panel-title">RDS</span></div>
+      <div class="panel-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">PS (8 chr)</div>
+            <input class="txt-input" id="rds-ps" maxlength="8" value="MY_RADIO"
+                   onchange="sendCmd('PS='+this.value.padEnd(8))">
+          </div>
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">PI (hex)</div>
+            <input class="txt-input" id="rds-pi" maxlength="4" value="5253"
+                   onchange="sendCmd('PI='+this.value)">
+          </div>
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">PTY (0-31)</div>
+            <input class="txt-input" id="rds-pty" type="number" min="0" max="31" value="2"
+                   onchange="sendCmd('PTY='+this.value)">
+          </div>
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">AF1 (MHz×10)</div>
+            <input class="txt-input" id="rds-af1" type="number" value="0"
+                   onchange="sendCmd('AF1='+this.value)">
+          </div>
+          <div class="ctrl-item col-span-2" style="grid-column:1/-1">
+            <div class="ctrl-lbl">RT (64 chr)</div>
+            <input class="txt-input" id="rds-rt" maxlength="64" value="Benvenuti su Cursor Radio"
+                   onchange="sendCmd('RT='+this.value)">
+          </div>
+          <div class="toggle-row" style="grid-column:1/-1">
+            <span class="toggle-lbl tt" data-tip="Traffic Announcement">TA</span>
+            <label class="toggle"><input type="checkbox" id="tog-ta" onchange="sendCmd('TA='+(this.checked?'1':'0'))"><span class="tslider"></span></label>
+            <span class="toggle-lbl" style="margin-left:20px">Debug log</span>
+            <label class="toggle"><input type="checkbox" id="tog-debug" onchange="sendCmd('DEBUG='+(this.checked?'1':'0'))"><span class="tslider"></span></label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ TAB COMP ═══ -->
+<div class="page" id="tab-comp">
+  <div class="grid-3">
+
+    <!-- Curva trasferimento -->
+    <div class="panel col-span-2">
+      <div class="panel-hdr">
+        <span class="panel-title">Curva di Trasferimento</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim)" id="curve-info"></span>
+      </div>
+      <div class="panel-body">
+        <canvas class="curve-canvas" id="curve-canvas"></canvas>
+        <div style="display:flex;gap:14px;margin-top:8px;font-family:var(--mono);font-size:8px;color:var(--text-dim)">
+          <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:2px;background:var(--blue)"></span>Curva</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:1px;background:rgba(255,255,255,.2);border-top:1px dashed rgba(255,255,255,.2)"></span>1:1</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>Punto op.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Metering compressore -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Metering</span></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:12px">
+        <div class="big-metric">
+          <div class="big-val green" id="gr-big">0.0</div>
+          <div class="big-unit">dB GAIN REDUCTION</div>
+        </div>
+        <div class="vbar-section">
+          <div class="vbar-col">
+            <span class="vbar-col-lbl">INPUT</span>
+            <div class="vbar-track"><div class="vbar-bar g" id="vbar-in" style="height:0%"></div></div>
+            <span class="vbar-num" id="vbar-in-val">−∞</span>
+          </div>
+          <div class="vbar-col">
+            <span class="vbar-col-lbl">GR</span>
+            <div class="vbar-track"><div class="vbar-bar r" id="vbar-gr" style="height:0%"></div></div>
+            <span class="vbar-num" id="vbar-gr-val">—</span>
+          </div>
+          <div class="vbar-col">
+            <span class="vbar-col-lbl">OUT PK</span>
+            <div class="vbar-track"><div class="vbar-bar g" id="vbar-out" style="height:0%"></div></div>
+            <span class="vbar-num" id="vbar-out-val">−∞</span>
+          </div>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-lbl">Enable</span>
+          <label class="toggle"><input type="checkbox" id="tog-comp" checked onchange="sendCmd('COMP_EN='+(this.checked?'1':'0'))"><span class="tslider"></span></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controlli compressore -->
+    <div class="panel col-span-3">
+      <div class="panel-hdr"><span class="panel-title">Parametri Compressore</span></div>
+      <div class="panel-body">
+        <div class="grid-3" style="gap:16px 28px">
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">Threshold<span class="ctrl-val" id="lbl-thr">−18.0 dBFS</span></div>
+            <input type="range" id="sl-thr" min="-40" max="0" step="0.5" value="-18"
+                   oninput="onComp('thr',+this.value)">
+            <div class="range-ends"><span>−40</span><span>0 dBFS</span></div>
+          </div>
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">Ratio<span class="ctrl-val" id="lbl-ratio">4.0 : 1</span></div>
+            <input type="range" id="sl-ratio" min="1" max="20" step="0.5" value="4"
+                   oninput="onComp('ratio',+this.value)">
+            <div class="range-ends"><span>1:1</span><span>20:1</span></div>
+          </div>
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">Makeup Gain<span class="ctrl-val" id="lbl-mu">+0.0 dB</span></div>
+            <input type="range" id="sl-mu" min="-6" max="18" step="0.5" value="0"
+                   oninput="onComp('mu',+this.value)">
+            <div class="range-ends"><span>−6</span><span>+18 dB</span></div>
+          </div>
+
+          <div class="sep-row col-span-3"><span>Dinamica</span></div>
+
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">Soft Knee<span class="ctrl-val" id="lbl-knee">6.0 dB</span></div>
+            <input type="range" id="sl-knee" min="0" max="12" step="0.5" value="6"
+                   oninput="onComp('knee',+this.value)">
+            <div class="range-ends"><span>Hard</span><span>12 dB</span></div>
+          </div>
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">Attack<span class="ctrl-val" id="lbl-atk">5.0 ms</span></div>
+            <input type="range" id="sl-atk" min="0.5" max="100" step="0.5" value="5"
+                   oninput="onComp('atk',+this.value)">
+            <div class="range-ends"><span>0.5 ms</span><span>100 ms</span></div>
+          </div>
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">Release<span class="ctrl-val" id="lbl-rel">150 ms</span></div>
+            <input type="range" id="sl-rel" min="10" max="2000" step="10" value="150"
+                   oninput="onComp('rel',+this.value)">
+            <div class="range-ends"><span>10 ms</span><span>2 s</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ TAB POWER ═══ -->
+<div class="page" id="tab-power">
+  <div class="grid-3">
+
+    <!-- Potenza -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Potenza Avanti</span></div>
+      <div class="panel-body">
+        <div class="big-metric">
+          <div class="big-val green" id="fwd-big">0.00</div>
+          <div class="big-unit">WATT FWD</div>
+        </div>
+        <div class="vu-wrap" style="margin-top:10px"><div class="vu-fill green" id="bar-fwd" style="width:0%"></div></div>
+        <div class="vu-label"><span>0</span><span id="fwd-scale-mid">6</span><span id="fwd-scale-max">12 W</span></div>
+      </div>
+    </div>
+
+    <!-- SWR -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">VSWR / Riflessa</span></div>
+      <div class="panel-body">
+        <div class="big-metric">
+          <div class="big-val green" id="swr-big">1.00</div>
+          <div class="big-unit">SWR</div>
+        </div>
+        <div class="vu-wrap" style="margin-top:10px"><div class="vu-fill green" id="bar-swr" style="width:0%"></div></div>
+        <div class="vu-label"><span>1.0</span><span>2.0</span><span>3.0+</span></div>
+        <div style="margin-top:8px;display:flex;justify-content:space-between">
+          <span class="ctrl-lbl">Riflessa</span>
+          <span style="font-family:var(--mono);font-size:10px" id="ref-w-val">0.00 W</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Temperatura -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Temperatura</span></div>
+      <div class="panel-body">
+        <div class="big-metric">
+          <div class="big-val green" id="temp-big">0.0</div>
+          <div class="big-unit">°C</div>
+        </div>
+        <div class="vu-wrap" style="margin-top:10px"><div class="vu-fill green" id="bar-temp" style="width:0%"></div></div>
+        <div class="vu-label"><span>0°C</span><span>40°C</span><span id="temp-alarm-lbl">65°C ⚠</span></div>
+      </div>
+    </div>
+
+    <!-- Allarmi -->
+    <div class="panel col-span-3">
+      <div class="panel-hdr"><span class="panel-title">Allarmi</span></div>
+      <div class="panel-body">
+        <div class="alarm-row">
+          <div class="alarm-chip" id="alm-temp">🌡 TEMP ALTA</div>
+          <div class="alarm-chip" id="alm-swr">↩ SWR ALTO</div>
+          <div class="alarm-chip" id="alm-fwdlow">⚡ FWD BASSA</div>
+          <div class="alarm-chip" id="alm-fwdhigh">⚡ FWD ALTA</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAC / PID / Soft-start -->
+    <div class="panel col-span-2">
+      <div class="panel-hdr"><span class="panel-title">Controllo Potenza — DAC + PID</span></div>
+      <div class="panel-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div>
+            <div class="ctrl-item">
+              <div class="ctrl-lbl">Target Potenza<span class="ctrl-val" id="lbl-pid-target">5.0 W</span></div>
+              <input type="range" id="sl-pid-target" min="0.5" max="15" step="0.5" value="5"
+                     oninput="onPidTarget(+this.value)">
+              <div class="range-ends"><span>0.5 W</span><span>15 W</span></div>
+            </div>
+            <div class="divider"></div>
+            <div class="pid-grid">
+              <div class="ctrl-item">
+                <div class="ctrl-lbl">Kp</div>
+                <input class="txt-input" id="pid-kp" value="0.8" style="font-size:12px" onchange="sendPid()">
+              </div>
+              <div class="ctrl-item">
+                <div class="ctrl-lbl">Ki</div>
+                <input class="txt-input" id="pid-ki" value="0.05" style="font-size:12px" onchange="sendPid()">
+              </div>
+              <div class="ctrl-item">
+                <div class="ctrl-lbl">Kd</div>
+                <input class="txt-input" id="pid-kd" value="0.02" style="font-size:12px" onchange="sendPid()">
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="ctrl-lbl">DAC Corrente</span>
+              <span style="font-family:var(--mono);font-size:11px" id="dac-val">0</span>
+            </div>
+            <div class="vu-wrap"><div class="vu-fill green" id="bar-dac" style="width:0%"></div></div>
+            <div class="vu-label"><span>0</span><span>2048</span><span>4095</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+              <span class="ctrl-lbl">PID Output</span>
+              <span style="font-family:var(--mono);font-size:11px" id="pid-out-val">0.0</span>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:auto">
+              <button class="btn primary" onclick="doSoftstart()">▶ Soft-Start</button>
+              <button class="btn" onclick="sendCmd('MUTE=1')">■ Stop TX</button>
+            </div>
+            <div class="softstart-bar"><div class="softstart-fill" id="softstart-fill"></div></div>
+            <span style="font-family:var(--mono);font-size:8px;color:var(--text-dim)" id="softstart-lbl"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAC target manuale -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Soft-Start Config</span></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">DAC Target (0-4095)<span class="ctrl-val" id="lbl-dac-target">2000</span></div>
+          <input type="range" id="sl-dac-target" min="0" max="4095" step="50" value="2000"
+                 oninput="document.getElementById('lbl-dac-target').textContent=this.value">
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">Allarme Temp (°C)<span class="ctrl-val" id="lbl-alm-temp">65</span></div>
+          <input type="range" id="sl-alm-temp" min="40" max="85" step="1" value="65"
+                 oninput="document.getElementById('lbl-alm-temp').textContent=this.value">
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">Allarme SWR max<span class="ctrl-val" id="lbl-alm-swr">2.5</span></div>
+          <input type="range" id="sl-alm-swr" min="1.5" max="5.0" step="0.1" value="2.5"
+                 oninput="document.getElementById('lbl-alm-swr').textContent=(+this.value).toFixed(1)">
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ TAB STORICO ═══ -->
+<div class="page" id="tab-history">
+  <div style="display:flex;flex-direction:column;gap:12px">
+
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-title">Temperatura (°C)</span>
+        <button class="btn" onclick="downloadCSV()" style="padding:3px 10px;font-size:9px">↓ CSV</button>
+      </div>
+      <div class="panel-body"><canvas class="hist-canvas" id="hist-temp"></canvas></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-hdr"><span class="panel-title">Potenza Avanti (W)</span></div>
+        <div class="panel-body"><canvas class="hist-canvas" id="hist-fwd"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-hdr"><span class="panel-title">VSWR</span></div>
+        <div class="panel-body"><canvas class="hist-canvas" id="hist-swr"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Gain Reduction Compressore (dB)</span></div>
+      <div class="panel-body"><canvas class="hist-canvas" id="hist-gr"></canvas></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ TAB SISTEMA ═══ -->
+<div class="page" id="tab-system">
+  <div class="grid-2">
+
+    <!-- EEPROM -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">EEPROM / Memoria Settaggi</span></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+        <p style="color:var(--text-mid);font-size:11px;line-height:1.6">
+          Salva tutti i parametri correnti nella memoria EEPROM della mainboard.<br>
+          Al prossimo avvio verranno ripristinati automaticamente.
+        </p>
+        <div style="display:flex;gap:8px">
+          <button class="btn primary" onclick="eepromSave()">💾 Salva su EEPROM</button>
+          <button class="btn warn" onclick="eepromLoad()">📂 Carica da EEPROM</button>
+        </div>
+        <div id="eeprom-status" style="font-family:var(--mono);font-size:9px;color:var(--text-dim);min-height:16px"></div>
+      </div>
+    </div>
+
+    <!-- Info sistema -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Informazioni Sistema</span></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between">
+          <span class="ctrl-lbl">Backend</span>
+          <span style="font-family:var(--mono);font-size:9px" id="sys-backend">Python Bottle</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="ctrl-lbl">Modulatore UDP</span>
+          <span style="font-family:var(--mono);font-size:9px" id="sys-udp">127.0.0.1:9120</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="ctrl-lbl">I2C Bus</span>
+          <span style="font-family:var(--mono);font-size:9px" id="sys-i2c">/dev/i2c-1</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="ctrl-lbl">ADC</span>
+          <span style="font-family:var(--mono);font-size:9px">ADS1115 @ 0x48</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="ctrl-lbl">DAC</span>
+          <span style="font-family:var(--mono);font-size:9px">MCP4725 @ 0x60</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="ctrl-lbl">EEPROM</span>
+          <span style="font-family:var(--mono);font-size:9px">AT24C32 @ 0x50</span>
+        </div>
+        <div class="divider"></div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="ctrl-lbl">Uptime</span>
+          <span style="font-family:var(--mono);font-size:9px" id="sys-uptime">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="ctrl-lbl">Ultimo poll</span>
+          <span style="font-family:var(--mono);font-size:9px" id="sys-lastpoll">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fix TX_FREQ/TX_GAIN bug (patch applicabile in runtime) -->
+    <div class="panel col-span-2">
+      <div class="panel-hdr"><span class="panel-title">Comandi Manuali</span></div>
+      <div class="panel-body" style="display:flex;gap:8px;align-items:flex-end">
+        <div class="ctrl-item" style="flex:1">
+          <div class="ctrl-lbl">Comando UDP raw</div>
+          <input class="txt-input" id="raw-cmd" placeholder="es. TX_FREQ=101.5 oppure GET">
+        </div>
+        <button class="btn" onclick="sendRawCmd()" style="flex-shrink:0">Invia</button>
+        <div id="raw-resp" style="flex:2;font-family:var(--mono);font-size:9px;color:var(--text-mid);white-space:pre;max-height:60px;overflow:auto"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// Stato locale
+// ─────────────────────────────────────────────
+const P = {
+  thr:-18, ratio:4, knee:6, atk:5, rel:150, mu:0,
+  txfreq:100, txgain:-17, gain:0,
+  pilot:0.09, stereo:0.44, rds:0.03,
+  preemph:0, deemph:0,
+};
+let compInputDb = -40, compGrDb = 0, compOutPeak = -60;
+let startTime = Date.now();
+
+// ─────────────────────────────────────────────
+// Tab navigation
+// ─────────────────────────────────────────────
+function showTab(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  event.target.classList.add('active');
+  if (id === 'history') refreshHistory();
+}
+
+// ─────────────────────────────────────────────
+// API calls
+// ─────────────────────────────────────────────
+async function sendCmd(cmd) {
+  try {
+    await fetch('/api/cmd', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd})});
+  } catch(e) {}
+}
+
+async function sendRawCmd() {
+  const cmd = document.getElementById('raw-cmd').value.trim();
+  if (!cmd) return;
+  try {
+    const r = await fetch('/api/cmd', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd})});
+    const d = await r.json();
+    document.getElementById('raw-resp').textContent = d.response || '(no risposta)';
+  } catch(e) { document.getElementById('raw-resp').textContent = 'Errore: '+e; }
+}
+
+async function eepromSave() {
+  const el = document.getElementById('eeprom-status');
+  try {
+    await fetch('/api/eeprom/save', {method:'POST'});
+    el.style.color = 'var(--green)';
+    el.textContent = '✓ Salvato — ' + new Date().toLocaleTimeString();
+  } catch(e) { el.style.color='var(--red)'; el.textContent='Errore: '+e; }
+}
+
+async function eepromLoad() {
+  const el = document.getElementById('eeprom-status');
+  try {
+    const r = await fetch('/api/eeprom/load', {method:'POST'});
+    const d = await r.json();
+    if (d.ok) { el.style.color='var(--blue)'; el.textContent='✓ Caricato da EEPROM'; }
+    else { el.style.color='var(--yellow)'; el.textContent='⚠ '+d.error; }
+  } catch(e) { el.style.color='var(--red)'; el.textContent='Errore: '+e; }
+}
+
+async function doSoftstart() {
+  const target = parseInt(document.getElementById('sl-dac-target').value);
+  try {
+    await fetch('/api/softstart', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dac_target:target})});
+    document.getElementById('softstart-lbl').textContent = 'Soft-start → DAC '+target;
+  } catch(e) {}
+}
+
+async function sendPid() {
+  const kp = parseFloat(document.getElementById('pid-kp').value);
+  const ki = parseFloat(document.getElementById('pid-ki').value);
+  const kd = parseFloat(document.getElementById('pid-kd').value);
+  try {
+    await fetch('/api/pid', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kp,ki,kd})});
+  } catch(e) {}
+}
+
+function onPidTarget(val) {
+  document.getElementById('lbl-pid-target').textContent = val.toFixed(1)+' W';
+  try {
+    fetch('/api/pid', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_w:val})});
+  } catch(e) {}
+}
+
+// ─────────────────────────────────────────────
+// Param handlers
+// ─────────────────────────────────────────────
+function onTxParam(name, val) {
+  P[name] = val;
+  const map = {
+    txfreq: ['lbl-txfreq', v=>v.toFixed(1)+' MHz', v=>'TX_FREQ='+v],
+    txgain: ['lbl-txgain', v=>(v>=0?'+':'')+v.toFixed(0)+' dB', v=>'TX_GAIN='+v],
+    gain:   ['lbl-gain',   v=>(v>=0?'+':'')+v.toFixed(1)+' dB', v=>'GAIN='+v],
+    pilot:  ['lbl-pilot',  v=>v.toFixed(3), v=>'VOL_PILOT='+v],
+    stereo: ['lbl-stereo', v=>v.toFixed(2), v=>'VOL_STEREO='+v],
+    rds:    ['lbl-rds',    v=>v.toFixed(3), v=>'VOL_RDS='+v],
+    preemph:['lbl-preemph',v=>v<=0?'OFF':v+' µs', v=>'PREEMPH='+v],
+    deemph: ['lbl-deemph', v=>v<=0?'OFF':v+' µs', v=>'DEEMPH='+v],
+  };
+  if (map[name]) {
+    const [lblId, fmt, cmd] = map[name];
+    document.getElementById(lblId).textContent = fmt(val);
+    sendCmd(cmd(val));
+  }
+  if (name === 'txfreq') document.getElementById('top-freq').innerHTML = val.toFixed(1)+'<span>MHz</span>';
+}
+
+function onComp(name, val) {
+  P[name] = val;
+  const lbls = {
+    thr:   ['lbl-thr',   v=>v.toFixed(1)+' dBFS',    'COMP_THR'],
+    ratio: ['lbl-ratio', v=>v.toFixed(1)+' : 1',      'COMP_RATIO'],
+    knee:  ['lbl-knee',  v=>v===0?'Hard':v.toFixed(1)+' dB', 'COMP_KNEE'],
+    atk:   ['lbl-atk',  v=>v.toFixed(1)+' ms',        'COMP_ATK'],
+    rel:   ['lbl-rel',  v=>v.toFixed(0)+' ms',         'COMP_REL'],
+    mu:    ['lbl-mu',   v=>(v>=0?'+':'')+v.toFixed(1)+' dB', 'COMP_MU'],
+  };
+  if (lbls[name]) {
+    const [id, fmt, cmd] = lbls[name];
+    document.getElementById(id).textContent = fmt(val);
+    sendCmd(`${cmd}=${val}`);
+  }
+  drawCurve();
+}
+
+// ─────────────────────────────────────────────
+// Gain computer (replica C++)
+// ─────────────────────────────────────────────
+function gainComputer(in_db, thr, ratio, knee) {
+  const half = knee * 0.5, over = in_db - thr;
+  if (over < -half) return 0;
+  if (over <= half) {
+    const t = (over + half) / knee;
+    return (t*t*(over+half)/(2*ratio) - (over+half)) / 2;
+  }
+  return over * (1/ratio - 1);
+}
+
+// ─────────────────────────────────────────────
+// Curva di trasferimento
+// ─────────────────────────────────────────────
+function drawCurve() {
+  const canvas = document.getElementById('curve-canvas');
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  if (!W || !H) return;
+  canvas.width = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const pad = 34, RANGE = 60;
+  const xOf = db => pad + (db+RANGE)/RANGE*(W-pad*2);
+  const yOf = db => (H-pad) - (db+RANGE)/RANGE*(H-pad*2);
+
+  // Griglia
+  ctx.strokeStyle = 'rgba(255,255,255,.04)';
+  ctx.lineWidth = 1;
+  for (let db=-60;db<=0;db+=10) {
+    ctx.beginPath();ctx.moveTo(xOf(db),pad);ctx.lineTo(xOf(db),H-pad);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pad,yOf(db));ctx.lineTo(W-pad,yOf(db));ctx.stroke();
+  }
+  // Assi
+  ctx.strokeStyle='rgba(255,255,255,.12)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,H-pad);ctx.lineTo(W-pad,H-pad);ctx.stroke();
+  // Labels
+  ctx.fillStyle='#3a5050';ctx.font=`${8}px 'Share Tech Mono',monospace`;
+  ctx.textAlign='center';ctx.textBaseline='top';
+  [-60,-48,-36,-24,-12,0].forEach(db=>ctx.fillText(db,xOf(db),H-pad+3));
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  [-60,-48,-36,-24,-12,0].forEach(db=>ctx.fillText(db,pad-3,yOf(db)));
+
+  // 1:1
+  ctx.strokeStyle='rgba(255,255,255,.08)';ctx.setLineDash([4,4]);
+  ctx.beginPath();ctx.moveTo(xOf(-RANGE),yOf(-RANGE));ctx.lineTo(xOf(0),yOf(0));ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Knee zone
+  const half=P.knee*.5;
+  ctx.fillStyle='rgba(245,196,0,.05)';
+  ctx.fillRect(xOf(P.thr-half),pad,xOf(P.thr+half)-xOf(P.thr-half),H-pad*2);
+  ctx.strokeStyle='rgba(245,196,0,.25)';ctx.setLineDash([3,3]);
+  ctx.beginPath();ctx.moveTo(xOf(P.thr),pad);ctx.lineTo(xOf(P.thr),H-pad);ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Curva
+  ctx.strokeStyle='var(--blue)';ctx.lineWidth=2;
+  ctx.shadowColor='rgba(0,200,240,.35)';ctx.shadowBlur=8;
+  ctx.beginPath();let first=true;
+  for (let in_db=-RANGE;in_db<=0;in_db+=0.5) {
+    const out=in_db+gainComputer(in_db,P.thr,P.ratio,P.knee)+P.mu;
+    const x=xOf(in_db),y=yOf(Math.max(-RANGE,out));
+    first?ctx.moveTo(x,y):ctx.lineTo(x,y);first=false;
+  }
+  ctx.stroke();ctx.shadowBlur=0;
+
+  // Punto operativo
+  if (compInputDb > -RANGE) {
+    const gr=gainComputer(compInputDb,P.thr,P.ratio,P.knee);
+    const out=compInputDb+gr+P.mu;
+    const ox=xOf(compInputDb),oy=yOf(Math.max(-RANGE,out));
+    ctx.strokeStyle='rgba(255,45,85,.25)';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(ox,H-pad);
+    ctx.moveTo(ox,oy);ctx.lineTo(pad,oy);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle='var(--red)';ctx.shadowColor='rgba(255,45,85,.5)';ctx.shadowBlur=10;
+    ctx.beginPath();ctx.arc(ox,oy,5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    document.getElementById('curve-info').textContent=
+      `in:${compInputDb.toFixed(1)} out:${Math.max(-RANGE,out).toFixed(1)} GR:${gr.toFixed(1)}`;
+  }
+}
+
+// ─────────────────────────────────────────────
+// History canvas
+// ─────────────────────────────────────────────
+function drawHistory(canvasId, data, color, min, max, unit='') {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !data || data.length < 2) return;
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  canvas.width = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const pad = 4;
+  const range = max - min || 1;
+  const xOf = i => pad + i/(data.length-1)*(W-pad*2);
+  const yOf = v => (H-pad) - (v-min)/range*(H-pad*2);
+
+  // Griglia
+  ctx.strokeStyle='rgba(255,255,255,.03)';ctx.lineWidth=1;
+  for (let i=0;i<4;i++) {
+    const y = pad + i/(3)*(H-pad*2);
+    ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(W-pad,y);ctx.stroke();
+  }
+
+  // Area fill
+  ctx.fillStyle = color.replace(')',', 0.08)').replace('rgb','rgba');
+  ctx.beginPath();ctx.moveTo(xOf(0),H-pad);
+  data.forEach((v,i)=>ctx.lineTo(xOf(i),yOf(v)));
+  ctx.lineTo(xOf(data.length-1),H-pad);ctx.closePath();ctx.fill();
+
+  // Line
+  ctx.strokeStyle=color;ctx.lineWidth=1.5;
+  ctx.shadowColor=color;ctx.shadowBlur=4;
+  ctx.beginPath();
+  data.forEach((v,i)=>i===0?ctx.moveTo(xOf(0),yOf(v)):ctx.lineTo(xOf(i),yOf(v)));
+  ctx.stroke();ctx.shadowBlur=0;
+
+  // Min/max labels
+  const cur = data[data.length-1];
+  const dmax = Math.max(...data), dmin = Math.min(...data);
+  ctx.fillStyle='rgba(184,204,204,.6)';ctx.font=`8px 'Share Tech Mono',monospace`;
+  ctx.textAlign='right';ctx.textBaseline='top';
+  ctx.fillText(dmax.toFixed(1)+unit, W-pad, pad);
+  ctx.textBaseline='bottom';
+  ctx.fillText(dmin.toFixed(1)+unit, W-pad, H-pad);
+  ctx.textAlign='left';ctx.textBaseline='middle';
+  ctx.fillStyle='rgba(0,229,170,.9)';
+  ctx.fillText('▶ '+cur.toFixed(1)+unit, pad, H/2);
+}
+
+async function refreshHistory() {
+  try {
+    const r = await fetch('/api/history');
+    const d = await r.json();
+    drawHistory('hist-temp',  d.temp,    '#ff7d2a', 0,   80,  '°C');
+    drawHistory('hist-fwd',   d.fwd,     '#00e5aa', 0,   15,  'W');
+    drawHistory('hist-swr',   d.swr,     '#00c8f0', 1.0, 3.5, '');
+    drawHistory('hist-gr',    d.comp_gr, '#b060ff', -20, 0,   'dB');
+  } catch(e) {}
+}
+
+function downloadCSV() {
+  window.open('/api/csv');
+}
+
+// ─────────────────────────────────────────────
+// Poll status
+// ─────────────────────────────────────────────
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/status');
+    if (!r.ok) throw new Error();
+    const s = await r.json();
+
+    // Connessione OK
+    document.getElementById('chip-conn').querySelector('.dot').style.background='var(--green)';
+    document.getElementById('sys-lastpoll').textContent = new Date().toLocaleTimeString();
+
+    // Aggiorna uptime
+    const up = Math.floor((Date.now()-startTime)/1000);
+    document.getElementById('sys-uptime').textContent = `${Math.floor(up/3600)}h ${Math.floor(up%3600/60)}m ${up%60}s`;
+
+    // ── Params ──
+    const p = s.params || {};
+    syncSlider('sl-txfreq','lbl-txfreq', p.tx_freq, v=>v?.toFixed(1)+' MHz');
+    syncSlider('sl-txgain','lbl-txgain', p.tx_gain, v=>(v>=0?'+':'')+v?.toFixed(0)+' dB');
+    syncSlider('sl-gain',  'lbl-gain',   p.gain,    v=>(v>=0?'+':'')+v?.toFixed(1)+' dB');
+    syncSlider('sl-pilot', 'lbl-pilot',  p.vol_pilot, v=>v?.toFixed(3));
+    syncSlider('sl-stereo','lbl-stereo', p.vol_stereo, v=>v?.toFixed(2));
+    syncSlider('sl-rds',   'lbl-rds',    p.vol_rds,  v=>v?.toFixed(3));
+
+    if (p.tx_freq != null) {
+      P.txfreq = p.tx_freq;
+      document.getElementById('top-freq').innerHTML = p.tx_freq.toFixed(1)+'<span>MHz</span>';
+    }
+    if (p.mute != null) {
+      document.getElementById('tog-mute').checked = p.mute;
+      document.getElementById('chip-mute').style.display = p.mute ? 'flex' : 'none';
+    }
+    if (p.debug != null) document.getElementById('tog-debug').checked = p.debug;
+    if (p.ta != null)    document.getElementById('tog-ta').checked = p.ta === 1;
+    if (p.ps)  document.getElementById('rds-ps').value = p.ps;
+    if (p.rt)  document.getElementById('rds-rt').value = p.rt;
+    if (p.pi)  document.getElementById('rds-pi').value = p.pi;
+    if (p.pty != null) document.getElementById('rds-pty').value = p.pty;
+
+    // Comp params
+    if (p.comp_thr   != null) { P.thr=p.comp_thr;   document.getElementById('sl-thr').value=p.comp_thr;   document.getElementById('lbl-thr').textContent=p.comp_thr.toFixed(1)+' dBFS'; }
+    if (p.comp_ratio != null) { P.ratio=p.comp_ratio;document.getElementById('sl-ratio').value=p.comp_ratio; document.getElementById('lbl-ratio').textContent=p.comp_ratio.toFixed(1)+' : 1'; }
+    if (p.comp_en != null) document.getElementById('tog-comp').checked = p.comp_en;
+
+    // ── Metering ──
+    const m = s.metering || {};
+    compInputDb  = m.comp_input_db  ?? -40;
+    compGrDb     = m.comp_gr_db     ?? 0;
+    compOutPeak  = m.comp_output_peak ?? -60;
+
+    const grAbs = Math.abs(compGrDb);
+    const grEl = document.getElementById('gr-big');
+    grEl.textContent = grAbs < 0.1 ? '0.0' : grAbs.toFixed(1);
+    grEl.className = 'big-val ' + (grAbs<0.5?'green':grAbs<6?'yellow':'red');
+
+    const pctIn  = Math.max(0, Math.min(100, (compInputDb+60)/60*100));
+    const pctGR  = Math.min(100, grAbs/20*100);
+    const pctOut = Math.max(0, Math.min(100, (compOutPeak+60)/60*100));
+    document.getElementById('vbar-in').style.height = pctIn+'%';
+    document.getElementById('vbar-gr').style.height = pctGR+'%';
+    document.getElementById('vbar-out').style.height = pctOut+'%';
+    document.getElementById('vbar-in-val').textContent  = compInputDb>-60?compInputDb.toFixed(1)+' dB':'−∞';
+    document.getElementById('vbar-gr-val').textContent  = grAbs<0.1?'—':'−'+grAbs.toFixed(1)+' dB';
+    document.getElementById('vbar-out-val').textContent = compOutPeak>-60?compOutPeak.toFixed(1)+' dB':'−∞';
+
+    // MPX
+    const mpxPeak = m.mpx_peak ?? 0;
+    const mpxRms  = m.mpx_rms  ?? 0;
+    document.getElementById('mpx-peak-val').textContent = mpxPeak.toFixed(2);
+    document.getElementById('mpx-peak-val').className = 'big-val '+(mpxPeak<0.8?'green':mpxPeak<0.95?'yellow':'red');
+    document.getElementById('mpx-peak-num').textContent = mpxPeak.toFixed(3);
+    document.getElementById('mpx-rms-num').textContent  = mpxRms.toFixed(3);
+    document.getElementById('bar-mpx-peak').style.width = Math.min(100, mpxPeak*100)+'%';
+    document.getElementById('bar-mpx-rms').style.width  = Math.min(100, mpxRms*100)+'%';
+
+    // ── Sensori ──
+    const sens = s.sensors || {};
+    const temp = sens.temp_c ?? 0;
+    const fwd  = sens.fwd_w  ?? 0;
+    const ref  = sens.ref_w  ?? 0;
+    const swr  = sens.swr    ?? 1;
+    const dac  = sens.dac_value ?? 0;
+    const pidO = sens.pid_output ?? 0;
+
+    // Temp
+    document.getElementById('temp-big').textContent = temp.toFixed(1);
+    document.getElementById('temp-big').className = 'big-val '+(temp<45?'green':temp<60?'yellow':'red');
+    document.getElementById('bar-temp').style.width = Math.min(100, temp/80*100)+'%';
+
+    // FWD
+    document.getElementById('fwd-big').textContent = fwd.toFixed(2);
+    document.getElementById('fwd-big').className = 'big-val '+(fwd>0.5?'green':'yellow');
+    document.getElementById('bar-fwd').style.width = Math.min(100, fwd/15*100)+'%';
+
+    // SWR
+    document.getElementById('swr-big').textContent = swr.toFixed(2);
+    document.getElementById('swr-big').className = 'big-val '+(swr<1.5?'green':swr<2.5?'yellow':'red');
+    document.getElementById('bar-swr').style.width = Math.min(100, (swr-1)/2*100)+'%';
+    document.getElementById('ref-w-val').textContent = ref.toFixed(2)+' W';
+
+    // DAC
+    document.getElementById('dac-val').textContent = dac;
+    document.getElementById('bar-dac').style.width = (dac/4095*100)+'%';
+    document.getElementById('pid-out-val').textContent = pidO.toFixed(1);
+
+    // Soft-start
+    const ss = s.softstart;
+    document.getElementById('softstart-lbl').textContent = ss ? 'Soft-start in corso...' : '';
+    if (ss) {
+      document.getElementById('softstart-fill').style.width = (dac/4095*100)+'%';
+    }
+
+    // ── Allarmi ──
+    const alm = s.alarms || {};
+    setAlarm('alm-temp',    alm.temp_high);
+    setAlarm('alm-swr',     alm.swr_high);
+    setAlarm('alm-fwdlow',  alm.fwd_low);
+    setAlarm('alm-fwdhigh', alm.fwd_high);
+    const anyAlarm = Object.values(alm).some(Boolean);
+    document.getElementById('chip-alarm').style.display = anyAlarm?'flex':'none';
+
+  } catch(e) {
+    document.getElementById('chip-conn').querySelector('.dot').style.background='var(--red)';
+  }
+  setTimeout(pollStatus, 150);
+}
+
+function setAlarm(id, active) {
+  const el = document.getElementById(id);
+  if (active) el.classList.add('active');
+  else el.classList.remove('active');
+}
+
+function syncSlider(slId, lblId, val, fmt) {
+  if (val == null) return;
+  const sl = document.getElementById(slId);
+  if (sl && Math.abs(+sl.value - val) > 0.001) sl.value = val;
+  const lb = document.getElementById(lblId);
+  if (lb) lb.textContent = fmt(val);
+}
+
+// ─────────────────────────────────────────────
+// Animation loop
+// ─────────────────────────────────────────────
+let lastCurveDraw = 0;
+function frame(ts) {
+  if (ts - lastCurveDraw > 100) {
+    if (document.getElementById('tab-comp').classList.contains('active')) drawCurve();
+    lastCurveDraw = ts;
+  }
+  requestAnimationFrame(frame);
+}
+
+// ─────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────
+drawCurve();
+requestAnimationFrame(frame);
+pollStatus();
+</script>
+</body>
+</html>
