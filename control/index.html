@@ -1028,10 +1028,11 @@ async function pollStatus() {
     }
     if (p.debug != null) document.getElementById('tog-debug').checked = p.debug;
     if (p.ta != null)    document.getElementById('tog-ta').checked = p.ta === 1;
-    if (p.ps)  document.getElementById('rds-ps').value = p.ps;
-    if (p.rt)  document.getElementById('rds-rt').value = p.rt;
-    if (p.pi)  document.getElementById('rds-pi').value = p.pi;
-    if (p.pty != null) document.getElementById('rds-pty').value = p.pty;
+    syncText('rds-ps',  p.ps);
+    syncText('rds-rt',  p.rt);
+    syncText('rds-pi',  p.pi);
+    syncText('rds-pty', p.pty != null ? String(p.pty) : null);
+    syncText('rds-af1', p.af1 != null ? String(p.af1) : null);
 
     // Comp params
     if (p.comp_thr   != null) { P.thr=p.comp_thr;   document.getElementById('sl-thr').value=p.comp_thr;   document.getElementById('lbl-thr').textContent=p.comp_thr.toFixed(1)+' dBFS'; }
@@ -1130,9 +1131,17 @@ function setAlarm(id, active) {
 function syncSlider(slId, lblId, val, fmt) {
   if (val == null) return;
   const sl = document.getElementById(slId);
-  if (sl && Math.abs(+sl.value - val) > 0.001) sl.value = val;
+  if (sl && document.activeElement !== sl && Math.abs(+sl.value - val) > 0.001)
+    sl.value = val;
   const lb = document.getElementById(lblId);
   if (lb) lb.textContent = fmt(val);
+}
+
+function syncText(id, val) {
+  if (val == null) return;
+  const el = document.getElementById(id);
+  if (el && document.activeElement !== el)
+    el.value = val;
 }
 
 // ─────────────────────────────────────────────
