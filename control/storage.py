@@ -1,23 +1,31 @@
 """
-storage.py — Backend di persistenza settings + numero di serie
+storage.py — Persistenza multi-gruppo su EEPROM AT24C512 (512kbit = 64KB)
 
-Selezione automatica del backend:
-  - Raspberry Pi (rilevato da /proc/cpuinfo o flag USE_JSON=1) → EEPROM I2C
-  - Qualsiasi altra piattaforma, o USE_JSON=1                 → file JSON
+Mappa EEPROM (pagine da 128 byte, indirizzo I2C 0x50):
 
-Mappa EEPROM (AT24C32, 0x50):
-  0x00–0x13  Blocco serializzazione (magic 2B + SN 16B + CRC16 2B)
-  0x14–0x7F  Riservato
-  0x80–0xFF  Settings JSON (magic 2B + len 2B + payload)
+  Offset  Size  Magic   Gruppo
+  0x0000  128B  0xFE02  Numero di serie (binario, compatibile)
+  0x0080  256B  0xFE10  TX / Audio  (gain, volumi, tx_freq, tx_gain, enfasi, mute, PI, PTY, AF1)
+  0x0180  256B  0xFE11  Compressore (comp_en, thr, ratio, knee, atk, rel, mu, lim)
+  0x0280  256B  0xFE12  RDS config  (rt_mode, rt_alt_sec, ps_long, ps_cycle_sec,
+                                     radio_name, icecast_url, icecast_interval_sec)
+  0x0380  256B  0xFE13  RDS testi   (rt_fixed 64B, rt_alt 64B — separati per dimensione)
+  0x0480  256B  0xFE14  Power / PID (power_target_w, kp, ki, kd, soglie allarmi)
 
-Il file JSON ha la stessa struttura logica:
-  {
-    "sn": "FM2024001",
-    "settings": { ... }
-  }
+Formato header blocco (7 byte):
+  [0-1]  magic    uint16 big-endian
+  [2]    version  uint8  (attualmente 1)
+  [3-4]  length   uint16 big-endian  → lunghezza payload JSON
+  [5-6]  crc16    uint16 big-endian  → CRC16-CCITT del solo payload
+
+Formato SN (binario, compatibile con versioni precedenti):
+  [0-1]  magic 0xFE02  uint16 big-endian
+  [2-17] SN string      16 byte, null-padded ASCII
+  [18-19]CRC16 dei byte 2-17
+
+Dev fallback: JsonStorage (attivato se smbus2 non disponibile o USE_JSON=1).
 """
 
-import hashlib
 import json
 import logging
 import os
@@ -26,22 +34,36 @@ import time
 
 log = logging.getLogger("fmweb.storage")
 
-# ── Indirizzi EEPROM ─────────────────────────────────────────
-I2C_BUS              = 1
-ADDR_EEPROM          = 0x50
-MAGIC_SN             = 0xFE02   # blocco serializzazione
-MAGIC_SETTINGS       = 0xFE01   # blocco settings
-OFFSET_SN            = 0x00
-OFFSET_SETTINGS      = 0x80
-SETTINGS_MAX_BYTES   = 124      # 128 - 4 (header)
+# ── Costanti I2C ──────────────────────────────────────────────
+I2C_BUS    = 1
+ADDR_EEPROM = 0x50   # AT24C512
+PAGE_SIZE   = 128    # byte per pagina di scrittura AT24C512
 
-# ── Percorsi file ─────────────────────────────────────────────
+# ── Mappa gruppi ─────────────────────────────────────────────
+GROUPS = {
+    #  nome          offset   size   magic
+    "sn":          (0x0000,  128,   0xFE02),  # numero di serie (binario)
+    "tx_audio":    (0x0080,  256,   0xFE10),
+    "compressor":  (0x0180,  256,   0xFE11),
+    "rds_cfg":     (0x0280,  256,   0xFE12),
+    "rds_text":    (0x0380,  256,   0xFE13),
+    "power_pid":   (0x0480,  256,   0xFE14),
+}
+
+HEADER_SIZE  = 7   # magic(2) + version(1) + len(2) + crc16(2)
+GROUP_VER    = 1   # versione formato corrente
+
+# ── Dev fallback ──────────────────────────────────────────────
 DEFAULT_JSON_PATH = os.environ.get(
     "FMMOD_JSON_STORAGE",
     os.path.join(os.path.expanduser("~"), ".fmmod", "storage.json")
 )
 
-# ── CRC16 CCITT ───────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────
+# Utilità
+# ─────────────────────────────────────────────────────────────
+
 def _crc16(data: bytes) -> int:
     crc = 0xFFFF
     for b in data:
@@ -51,221 +73,237 @@ def _crc16(data: bytes) -> int:
             crc &= 0xFFFF
     return crc
 
-# ── Rilevamento piattaforma ───────────────────────────────────
+
 def _is_raspberry_pi() -> bool:
-    """True se siamo su Raspberry Pi e smbus2 è disponibile."""
     if os.environ.get("USE_JSON", "0") == "1":
         return False
     try:
         with open("/proc/cpuinfo") as f:
             info = f.read()
         if "Raspberry Pi" in info or "BCM" in info:
-            import smbus2  # noqa — verifica disponibilità
+            import smbus2  # noqa
             return True
     except Exception:
         pass
     return False
 
+
 # ─────────────────────────────────────────────────────────────
-# Backend EEPROM
+# Backend EEPROM (AT24C512) — produzione
 # ─────────────────────────────────────────────────────────────
-class EepromBackend:
+
+class EepromStorage:
+    """
+    Storage multi-gruppo su AT24C512.
+    Usa smbus2.i2c_rdwr per accesso affidabile con indirizzi a 2 byte
+    e scritture page-aligned (128B).
+    """
+
     def __init__(self):
-        import smbus2
-        self._bus = smbus2.SMBus(I2C_BUS)
-        log.info("Storage: EEPROM I2C @ 0x%02X bus %d", ADDR_EEPROM, I2C_BUS)
+        from smbus2 import SMBus, i2c_msg
+        self._SMBus = SMBus
+        self._i2c_msg = i2c_msg
+        self._bus = SMBus(I2C_BUS)
+        log.info("EepromStorage: AT24C512 @ I2C 0x%02X bus %d", ADDR_EEPROM, I2C_BUS)
 
-    def _write(self, mem_addr: int, data: bytes):
-        chunk = 32
-        for i in range(0, len(data), chunk):
-            block = list(data[i:i+chunk])
-            a = mem_addr + i
-            self._bus.write_i2c_block_data(
-                ADDR_EEPROM, (a >> 8) & 0xFF, [a & 0xFF] + block)
-            time.sleep(0.010)
+    # ── I/O di basso livello ──────────────────────────────────
 
-    def _read(self, mem_addr: int, length: int) -> bytes:
-        self._bus.write_i2c_block_data(
-            ADDR_EEPROM, (mem_addr >> 8) & 0xFF, [mem_addr & 0xFF])
-        time.sleep(0.005)
-        return bytes(self._bus.read_i2c_block_data(ADDR_EEPROM, 0, length))
+    def _read_bytes(self, offset: int, length: int) -> bytes:
+        """Legge `length` byte da `offset`. Lettura sequenziale senza limite di pagina."""
+        addr_msg = self._i2c_msg.write(ADDR_EEPROM, [(offset >> 8) & 0xFF, offset & 0xFF])
+        read_msg = self._i2c_msg.read(ADDR_EEPROM, length)
+        self._bus.i2c_rdwr(addr_msg, read_msg)
+        return bytes(read_msg)
 
-    # ── Numero di serie ───────────────────────────────────────
+    def _write_bytes(self, offset: int, data: bytes):
+        """
+        Scrive `data` a partire da `offset`, rispettando i confini di pagina
+        da 128 byte dell'AT24C512. Attesa 5 ms dopo ogni ciclo di scrittura.
+        """
+        pos = 0
+        while pos < len(data):
+            # Quanti byte possiamo scrivere senza superare il confine di pagina?
+            page_start = (offset + pos) & ~(PAGE_SIZE - 1)
+            page_end   = page_start + PAGE_SIZE
+            avail      = page_end - (offset + pos)
+            chunk      = data[pos:pos + avail]
+            addr       = offset + pos
+            msg = self._i2c_msg.write(
+                ADDR_EEPROM,
+                [(addr >> 8) & 0xFF, addr & 0xFF] + list(chunk)
+            )
+            self._bus.i2c_rdwr(msg)
+            time.sleep(0.005)          # AT24C512: max tWR = 5 ms
+            pos += len(chunk)
+
+    # ── Numero di serie (formato binario fisso) ───────────────
+
     def read_sn(self) -> str | None:
+        offset, size, magic_expected = GROUPS["sn"]
         try:
-            raw = self._read(OFFSET_SN, 0x14)
+            raw = self._read_bytes(offset, 20)
             magic = struct.unpack_from(">H", raw, 0)[0]
-            if magic != MAGIC_SN:
+            if magic != magic_expected:
                 return None
             sn_bytes = raw[2:18]
-            crc_ok = struct.unpack_from(">H", raw, 18)[0]
+            crc_ok   = struct.unpack_from(">H", raw, 18)[0]
             if _crc16(sn_bytes) != crc_ok:
-                log.warning("EEPROM SN: CRC errato")
+                log.warning("EepromStorage.read_sn: CRC errato")
                 return None
             return sn_bytes.rstrip(b'\x00').decode('ascii')
         except Exception as e:
-            log.warning("EEPROM read_sn: %s", e)
+            log.warning("EepromStorage.read_sn: %s", e)
             return None
 
     def write_sn(self, sn: str) -> bool:
+        offset, size, magic_expected = GROUPS["sn"]
         try:
             sn_bytes = sn.encode('ascii').ljust(16, b'\x00')[:16]
-            crc = _crc16(sn_bytes)
-            block = struct.pack(">H", MAGIC_SN) + sn_bytes + struct.pack(">H", crc)
-            block = block.ljust(0x80, b'\xff')
-            self._write(OFFSET_SN, block[:0x80])
-            log.info("EEPROM SN scritto: %s", sn)
+            crc  = _crc16(sn_bytes)
+            block = (struct.pack(">H", magic_expected)
+                     + sn_bytes
+                     + struct.pack(">H", crc))
+            block = block.ljust(size, b'\xff')
+            self._write_bytes(offset, block)
+            log.info("EepromStorage.write_sn: '%s'", sn)
             return True
         except Exception as e:
-            log.error("EEPROM write_sn: %s", e)
+            log.error("EepromStorage.write_sn: %s", e)
             return False
 
-    # ── Settings ──────────────────────────────────────────────
-    def load_settings(self) -> dict | None:
+    # ── Gruppi JSON ───────────────────────────────────────────
+
+    def save_group(self, name: str, data: dict) -> bool:
+        if name not in GROUPS:
+            log.error("save_group: gruppo '%s' sconosciuto", name)
+            return False
+        offset, size, magic = GROUPS[name]
+        max_payload = size - HEADER_SIZE
         try:
-            raw = self._read(OFFSET_SETTINGS, 128)
-            magic = struct.unpack_from(">H", raw, 0)[0]
-            if magic != MAGIC_SETTINGS:
-                return None
-            length = struct.unpack_from(">H", raw, 2)[0]
-            if length == 0 or length > SETTINGS_MAX_BYTES:
-                return None
-            js = raw[4:4+length].decode('utf-8')
-            return json.loads(js)
+            payload = json.dumps(data, separators=(',', ':')).encode('utf-8')
+            if len(payload) > max_payload:
+                log.error("save_group '%s': payload %d B > max %d B",
+                          name, len(payload), max_payload)
+                return False
+            header = (struct.pack(">H", magic)
+                      + struct.pack(">B", GROUP_VER)
+                      + struct.pack(">H", len(payload))
+                      + struct.pack(">H", _crc16(payload)))
+            block = header + payload
+            block = block.ljust(size, b'\xff')
+            self._write_bytes(offset, block)
+            log.info("EepromStorage.save_group '%s': %d B payload", name, len(payload))
+            return True
         except Exception as e:
-            log.warning("EEPROM load_settings: %s", e)
+            log.error("EepromStorage.save_group '%s': %s", name, e)
+            return False
+
+    def load_group(self, name: str) -> dict | None:
+        if name not in GROUPS:
+            log.error("load_group: gruppo '%s' sconosciuto", name)
+            return None
+        offset, size, magic_expected = GROUPS[name]
+        try:
+            raw   = self._read_bytes(offset, size)
+            magic = struct.unpack_from(">H", raw, 0)[0]
+            if magic != magic_expected:
+                log.debug("load_group '%s': magic 0x%04X ≠ 0x%04X (non inizializzato?)",
+                          name, magic, magic_expected)
+                return None
+            # version = raw[2]  (non usato per ora, pronto per future versioni)
+            length  = struct.unpack_from(">H", raw, 3)[0]
+            crc_stored = struct.unpack_from(">H", raw, 5)[0]
+            if length == 0 or length > size - HEADER_SIZE:
+                log.warning("load_group '%s': length %d non valido", name, length)
+                return None
+            payload = raw[HEADER_SIZE:HEADER_SIZE + length]
+            if _crc16(payload) != crc_stored:
+                log.warning("load_group '%s': CRC errato", name)
+                return None
+            return json.loads(payload.decode('utf-8'))
+        except Exception as e:
+            log.warning("load_group '%s': %s", name, e)
             return None
 
-    def save_settings(self, settings: dict) -> bool:
-        try:
-            js = json.dumps(settings, separators=(',', ':')).encode('utf-8')
-            if len(js) > SETTINGS_MAX_BYTES:
-                log.error("Settings troppo grandi per EEPROM (%d > %d byte)",
-                          len(js), SETTINGS_MAX_BYTES)
-                return False
-            raw = struct.pack(">HH", MAGIC_SETTINGS, len(js)) + js
-            raw = raw.ljust(128, b'\xff')
-            self._write(OFFSET_SETTINGS, raw[:128])
-            log.info("EEPROM settings salvati (%d byte)", len(js))
-            return True
-        except Exception as e:
-            log.error("EEPROM save_settings: %s", e)
-            return False
+    @property
+    def backend_name(self) -> str:
+        return "EEPROM"
+
 
 # ─────────────────────────────────────────────────────────────
-# Backend JSON
+# Backend JSON — solo sviluppo / non-RPi
 # ─────────────────────────────────────────────────────────────
-class JsonBackend:
+
+class JsonStorage:
+    """
+    Fallback per sviluppo quando smbus2 non è disponibile o USE_JSON=1.
+    Memorizza tutti i gruppi come chiavi separate in un unico file JSON.
+    NON usare in produzione.
+    """
+
     def __init__(self, path: str = DEFAULT_JSON_PATH):
         self._path = path
-        dirpath = os.path.dirname(path)
-        if dirpath:
-            os.makedirs(dirpath, exist_ok=True)
-        log.info("Storage: JSON file → %s", path)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        log.warning("JsonStorage attivo — solo sviluppo, non usare in produzione! → %s", path)
 
-    def _load_file(self) -> dict:
+    def _load(self) -> dict:
         if os.path.exists(self._path):
             try:
                 with open(self._path) as f:
                     return json.load(f)
             except Exception as e:
-                log.warning("JSON load: %s", e)
+                log.warning("JsonStorage._load: %s", e)
         return {}
 
-    def _save_file(self, data: dict) -> bool:
+    def _save(self, data: dict) -> bool:
         try:
             tmp = self._path + ".tmp"
             with open(tmp, 'w') as f:
                 json.dump(data, f, indent=2)
-            os.replace(tmp, self._path)  # atomico
+            os.replace(tmp, self._path)
             return True
         except Exception as e:
-            log.error("JSON save: %s", e)
+            log.error("JsonStorage._save: %s", e)
             return False
 
-    # ── Numero di serie ───────────────────────────────────────
     def read_sn(self) -> str | None:
-        return self._load_file().get("sn")
+        return self._load().get("sn")
 
     def write_sn(self, sn: str) -> bool:
-        data = self._load_file()
+        data = self._load()
         data["sn"] = sn
-        return self._save_file(data)
+        return self._save(data)
 
-    # ── Settings ──────────────────────────────────────────────
-    def load_settings(self) -> dict | None:
-        return self._load_file().get("settings")
+    def save_group(self, name: str, payload: dict) -> bool:
+        data = self._load()
+        data[name] = payload
+        return self._save(data)
 
-    def save_settings(self, settings: dict) -> bool:
-        data = self._load_file()
-        data["settings"] = settings
-        return self._save_file(data)
-
-# ─────────────────────────────────────────────────────────────
-# Factory — selezione automatica backend
-# ─────────────────────────────────────────────────────────────
-def create_backend(json_path: str = DEFAULT_JSON_PATH):
-    """
-    Crea il backend appropriato:
-      - Raspberry Pi + smbus2 disponibile → EepromBackend
-      - Altrimenti (o USE_JSON=1)          → JsonBackend
-
-    In entrambi i casi il JsonBackend viene tenuto come backup:
-    se EEPROM fallisce, i settings vengono letti/scritti su JSON.
-    """
-    if _is_raspberry_pi():
-        try:
-            return EepromBackend()
-        except Exception as e:
-            log.warning("EEPROM non disponibile (%s) → fallback JSON", e)
-    return JsonBackend(json_path)
-
-
-# ─────────────────────────────────────────────────────────────
-# Wrapper con fallback automatico EEPROM → JSON
-# ─────────────────────────────────────────────────────────────
-class Storage:
-    """
-    Interfaccia unificata con fallback automatico.
-    Su Raspberry: tenta EEPROM, se fallisce scrive anche su JSON.
-    Altrove: solo JSON.
-    """
-    def __init__(self, json_path: str = DEFAULT_JSON_PATH):
-        self._primary = create_backend(json_path)
-        self._json_backup = None
-        # Se il primary è EEPROM, mantieni anche il backup JSON
-        if isinstance(self._primary, EepromBackend):
-            self._json_backup = JsonBackend(json_path)
-            log.info("Storage: EEPROM primario + JSON backup")
+    def load_group(self, name: str) -> dict | None:
+        return self._load().get(name)
 
     @property
     def backend_name(self) -> str:
-        return "EEPROM" if isinstance(self._primary, EepromBackend) else "JSON"
+        return "JSON"
 
-    def read_sn(self) -> str | None:
-        sn = self._primary.read_sn()
-        if sn is None and self._json_backup:
-            sn = self._json_backup.read_sn()
-            if sn:
-                log.info("SN letto da JSON backup (EEPROM vuota)")
-        return sn
 
-    def write_sn(self, sn: str) -> bool:
-        ok = self._primary.write_sn(sn)
-        if self._json_backup:
-            self._json_backup.write_sn(sn)  # sempre sincronizza il backup
-        return ok
+# ─────────────────────────────────────────────────────────────
+# Factory
+# ─────────────────────────────────────────────────────────────
 
-    def load_settings(self) -> dict | None:
-        s = self._primary.load_settings()
-        if s is None and self._json_backup:
-            s = self._json_backup.load_settings()
-            if s:
-                log.info("Settings letti da JSON backup (EEPROM vuota)")
-        return s
+def create_storage(json_path: str = DEFAULT_JSON_PATH):
+    """
+    Restituisce EepromStorage su Raspberry Pi con smbus2,
+    JsonStorage altrove (o se USE_JSON=1).
+    """
+    if _is_raspberry_pi():
+        try:
+            return EepromStorage()
+        except Exception as e:
+            log.warning("EepromStorage non disponibile (%s) → JsonStorage", e)
+    return JsonStorage(json_path)
 
-    def save_settings(self, settings: dict) -> bool:
-        ok = self._primary.save_settings(settings)
-        if self._json_backup:
-            self._json_backup.save_settings(settings)  # sempre sincronizza
-        return ok
+
+# Alias pubblico per compatibilità con server.py
+def Storage(json_path: str = DEFAULT_JSON_PATH):
+    return create_storage(json_path)

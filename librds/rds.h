@@ -37,10 +37,16 @@ extern void set_rds_pi(uint16_t pi_code);
 extern void set_rds_rt(char *rt);
 extern void set_rds_ps(char *ps);
 extern void set_rds_ta(int ta);
-/** PTY = Programme Type 0-31 (es. 0=None, 1=News, 2=Current affairs, ...) */
+/** TP = Traffic Programme: 1 = la stazione trasmette info sul traffico, 0 = no */
+extern void set_rds_tp(int tp);
+/** PTY = Programme Type 0-31 (es. 0=None, 1=News, 2=Pop Music, ...) */
 extern void set_rds_pty(uint8_t pty);
-/** AF1: freq_01mhz = frequenza in 0.1 MHz (875-1080), 0 = disabilitato. Es. 1015 = 101.5 MHz */
+/** MS = Music/Speech: 1 = Music (default), 0 = Speech */
+extern void set_rds_ms(int ms);
+/** AF1/AF2: freq_01mhz = frequenza in 0.1 MHz (876-1079 = 87.6-107.9 MHz), 0 = disabilitata.
+ *  Codice RDS = freq_01mhz − 875 (es. 1015 → codice 140 → 101.5 MHz) */
 extern void set_rds_af1(int freq_01mhz);
+extern void set_rds_af2(int freq_01mhz);
 /** Abilita log stream binario: 1 = avvia cattura di 114 gruppi (11856 bit) in /tmp/rds_stream.bin */
 extern void set_rds_log_binary(int enable);
 /** Ritorna 1 se in questa sessione e' stato scritto /tmp/rds_stream.bin. */

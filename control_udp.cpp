@@ -104,12 +104,22 @@ void control_udp_thread(GlobalSettings& settings) {
 
         } else if (startsWith("AF1=", 4)) {
             int f = std::atoi(msg.c_str() + 4);
-            if (f == 0 || (f >= 875 && f <= 1080)) {
+            if (f == 0 || (f >= 876 && f <= 1079)) {
                 { std::lock_guard<std::mutex> lk(settings.rds_mutex);
                   settings.rds_af1 = f; settings.rds_dirty = true; }
-                std::cerr << "RDS AF1=" << f << "\n";
+                std::cerr << "RDS AF1=" << f << " (" << (f?f/10.0:0) << " MHz)\n";
             } else {
-                std::cerr << "RDS AF1?: 0 (off) o 875-1080 (es. 1015 = 101.5 MHz)\n";
+                std::cerr << "RDS AF1?: 0 (off) o 876-1079 (87.6-107.9 MHz, es. 1015 = 101.5 MHz)\n";
+            }
+
+        } else if (startsWith("AF2=", 4)) {
+            int f = std::atoi(msg.c_str() + 4);
+            if (f == 0 || (f >= 876 && f <= 1079)) {
+                { std::lock_guard<std::mutex> lk(settings.rds_mutex);
+                  settings.rds_af2 = f; settings.rds_dirty = true; }
+                std::cerr << "RDS AF2=" << f << " (" << (f?f/10.0:0) << " MHz)\n";
+            } else {
+                std::cerr << "RDS AF2?: 0 (off) o 876-1079 (87.6-107.9 MHz, es. 1015 = 101.5 MHz)\n";
             }
 
         } else if (startsWith("TA=", 3)) {
@@ -119,6 +129,23 @@ void control_udp_thread(GlobalSettings& settings) {
             { std::lock_guard<std::mutex> lk(settings.rds_mutex);
               settings.rds_ta = ta; settings.rds_dirty = true; }
             std::cerr << "RDS TA=" << ta << "\n";
+
+        } else if (startsWith("TP=", 3)) {
+            int tp = (msg.size()>3 && (msg[3]=='1'||
+                      msg.substr(3).find("true")==0||
+                      msg.substr(3).find("on")==0)) ? 1 : 0;
+            { std::lock_guard<std::mutex> lk(settings.rds_mutex);
+              settings.rds_tp = tp; settings.rds_dirty = true; }
+            std::cerr << "RDS TP=" << tp << "\n";
+
+        } else if (startsWith("MS=", 3)) {
+            int ms = (msg.size()>3 && (msg[3]=='1'||
+                      msg.substr(3).find("true")==0||
+                      msg.substr(3).find("on")==0||
+                      msg.substr(3).find("music")==0)) ? 1 : 0;
+            { std::lock_guard<std::mutex> lk(settings.rds_mutex);
+              settings.rds_ms = ms; settings.rds_dirty = true; }
+            std::cerr << "RDS MS=" << (ms?"Music":"Speech") << "\n";
 
         // ── Livelli MPX ───────────────────────────────────────────────────────
         } else if (startsWith("VOL_PILOT=", 10)) {
@@ -270,7 +297,10 @@ void control_udp_thread(GlobalSettings& settings) {
                 out << "PI="  << pi_buf            << "\n";
                 out << "PTY=" << (int)settings.rds_pty << "\n";
                 out << "TA="  << settings.rds_ta   << "\n";
+                out << "TP="  << settings.rds_tp   << "\n";
+                out << "MS="  << settings.rds_ms   << "\n";
                 out << "AF1=" << settings.rds_af1  << "\n";
+                out << "AF2=" << settings.rds_af2  << "\n";
             }
             std::string resp = out.str();
             sendto(fd, resp.data(), resp.size(), 0,

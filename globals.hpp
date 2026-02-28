@@ -51,7 +51,10 @@ struct GlobalSettings {
     std::string rt_text    = "Benvenuti su Cursor Radio";
     uint16_t    rds_pi_code = 0x5253;
     int         rds_af1    = 0;
+    int         rds_af2    = 0;
     uint8_t     rds_pty    = 2;
     int         rds_ta     = 0;
+    int         rds_tp     = 0;   // Traffic Programme: 0=no, 1=yes
+    int         rds_ms     = 1;   // Music/Speech: 1=Music, 0=Speech
     bool        rds_dirty  = true;
 };

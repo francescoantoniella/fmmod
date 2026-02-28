@@ -26,11 +26,14 @@
 struct {
     uint16_t pi;
     int      ta;
+    int      tp;     /* Traffic Programme: 0=no, 1=yes */
     uint8_t  pty;
-    uint8_t  af1;
+    uint8_t  af1;    /* AF1 code: (freq_MHz×10 - 875), 0=disabilitata */
+    uint8_t  af2;    /* AF2 code: (freq_MHz×10 - 875), 0=disabilitata */
+    uint8_t  ms;     /* Music/Speech: 1=Music (default), 0=Speech */
     char     ps[PS_LENGTH];
     char     rt[RT_LENGTH];
-} rds_params = { 0 };
+} rds_params = { .ms = 1 };
 
 #define POLY      0x1B9
 #define POLY_DEG  10
@@ -78,11 +81,12 @@ static uint16_t rds_crc(uint16_t block) {
  *   bit  1-0   segment address (0-3)
  */
 static uint16_t make_block_b_0a(int segment) {
-    /* DI nibble: seg3 = stereo bit (bit 3 del nibble DI, trasmesso per ultimo) */
-    uint8_t di = (segment == 3) ? 1u : 0u;
-    return ((uint16_t)(rds_params.pty & 31u) << 5)
+    /* DI nibble: seg3 = bit 0 (Stereo), seg2 = bit 1 (Art.Head), seg1 = bit 2 (Compress), seg0 = bit 3 (Dyn.PTY) */
+    uint8_t di = (segment == 3) ? 1u : 0u;  /* DI0 = Stereo */
+    return ((uint16_t)(rds_params.tp ? 1u : 0u) << 10)
+         | ((uint16_t)(rds_params.pty & 31u) << 5)
          | ((uint16_t)(rds_params.ta ? 1u : 0u) << 4)
-         | (1u << 3)          /* M/S = Music */
+         | ((uint16_t)(rds_params.ms ? 1u : 0u) << 3)
          | ((uint16_t)di << 2)
          | (uint16_t)(segment & 3);
 }
@@ -130,7 +134,9 @@ static int get_rds_ct_group(uint16_t *blocks) {
          * Il campo PTY nel CT è sempre 0 per spec (non è una info programme).
          * TP nel CT: usiamo 0 (coerente con gli altri gruppi).
          */
-        blocks[1] = (uint16_t)(0x4000u | (uint16_t)((mjd >> 15) & 0x03u));
+        blocks[1] = (uint16_t)(0x4000u
+                    | ((uint16_t)(rds_params.tp ? 1u : 0u) << 10)
+                    | (uint16_t)((mjd >> 15) & 0x03u));
         blocks[2] = (uint16_t)(((mjd & 0x7FFF) << 1) | ((utc->tm_hour >> 4) & 1));
         blocks[3] = (uint16_t)(((utc->tm_hour & 0xF) << 12) | (utc->tm_min << 6));
 
@@ -180,9 +186,22 @@ static void get_rds_group(int *buffer) {
              * il decoder aggiorna solo i segmenti che riceve con CRC ok).
              */
             blocks[1] = make_block_b_0a(0);
-            blocks[2] = rds_params.af1
-                        ? (uint16_t)(rds_params.af1 << 8) | 0xCDu
-                        : 0xCDCDu;
+            /*
+             * AF Method A EN 50067 §3.2.1.6.1 — block C = [AF1 | AF2]
+             *
+             * Logica:
+             *  - AF1 e AF2 entrambe valide → [AF1 | AF2]
+             *  - Solo AF1 → [AF1 | AF1] (duplicato; evita il filler 0xCD=205 che
+             *    molti decoder decodificano erroneamente come freq AM/LF ~1953 kHz)
+             *  - Nessuna AF → 0xCDCD (filler standard)
+             */
+            if (rds_params.af1 && rds_params.af2) {
+                blocks[2] = ((uint16_t)rds_params.af1 << 8) | (uint16_t)rds_params.af2;
+            } else if (rds_params.af1) {
+                blocks[2] = ((uint16_t)rds_params.af1 << 8) | (uint16_t)rds_params.af1;
+            } else {
+                blocks[2] = 0xCDCDu;
+            }
             blocks[3] = ((uint16_t)(uint8_t)rds_params.ps[0] << 8)
                       |  (uint16_t)(uint8_t)rds_params.ps[1];
         }
@@ -311,15 +330,21 @@ void get_rds_samples(float *buffer, int count) {
 void set_rds_pi(uint16_t pi_code)    { rds_params.pi  = pi_code; }
 void set_rds_rt(char *rt)            { fill_rds_string(rds_params.rt, rt, 64); }
 void set_rds_ps(char *ps)            { fill_rds_string(rds_params.ps, ps, 8); }
-void set_rds_ta(int ta)              { rds_params.ta  = ta; }
+void set_rds_ta(int ta)              { rds_params.ta  = ta ? 1 : 0; }
+void set_rds_tp(int tp)              { rds_params.tp  = tp ? 1 : 0; }
 void set_rds_pty(uint8_t pty)        { rds_params.pty = (pty <= 31u) ? pty : 0u; }
+void set_rds_ms(int ms)              { rds_params.ms  = ms ? 1u : 0u; }
 
-void set_rds_af1(int freq_01mhz) {
-    if (freq_01mhz <= 0 || freq_01mhz < 875 || freq_01mhz > 1080)
-        rds_params.af1 = 0;
-    else
-        rds_params.af1 = (uint8_t)(freq_01mhz - 875);
+static uint8_t _af_encode(int freq_01mhz) {
+    /* Codici validi EN 50067: 1–204 → 87,6–107,9 MHz (passo 100 kHz)
+     * formula: codice = freq_01mhz − 875  (es. 880 → 5 → 88,0 MHz)
+     * Codice 0 riservato, codice 205 = filler → entrambi esclusi.       */
+    if (freq_01mhz < 876 || freq_01mhz > 1079) return 0;
+    return (uint8_t)(freq_01mhz - 875);
 }
+
+void set_rds_af1(int freq_01mhz) { rds_params.af1 = _af_encode(freq_01mhz); }
+void set_rds_af2(int freq_01mhz) { rds_params.af2 = _af_encode(freq_01mhz); }
 
 void set_rds_log_binary(int enable) {
     if (enable) {

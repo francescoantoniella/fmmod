@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FM Processor</title>
-<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Barlow+Condensed:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+@font-face { font-family:'Barlow Condensed'; font-style:normal; font-weight:300; font-display:swap; src:url('fonts/barlow-condensed-300.woff2') format('woff2'); }
+@font-face { font-family:'Barlow Condensed'; font-style:normal; font-weight:400; font-display:swap; src:url('fonts/barlow-condensed-400.woff2') format('woff2'); }
+@font-face { font-family:'Barlow Condensed'; font-style:normal; font-weight:600; font-display:swap; src:url('fonts/barlow-condensed-600.woff2') format('woff2'); }
+@font-face { font-family:'Barlow Condensed'; font-style:normal; font-weight:700; font-display:swap; src:url('fonts/barlow-condensed-700.woff2') format('woff2'); }
+@font-face { font-family:'Orbitron'; font-style:normal; font-weight:400 900; font-display:swap; src:url('fonts/orbitron.woff2') format('woff2'); }
+@font-face { font-family:'Share Tech Mono'; font-style:normal; font-weight:400; font-display:swap; src:url('fonts/share-tech-mono.woff2') format('woff2'); }
+</style>
 <style>
 :root {
   --bg:         #080b0b;
@@ -456,14 +463,14 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
 
     <!-- RDS -->
     <div class="panel col-span-2">
-      <div class="panel-hdr"><span class="panel-title">RDS</span></div>
-      <div class="panel-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
-          <div class="ctrl-item">
-            <div class="ctrl-lbl">PS (8 chr)</div>
-            <input class="txt-input" id="rds-ps" maxlength="8" value="MY_RADIO"
-                   onchange="sendCmd('PS='+this.value.padEnd(8))">
-          </div>
+      <div class="panel-hdr">
+        <span class="panel-title">RDS</span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text-mid)" id="rds-on-air-lbl"></span>
+      </div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:14px">
+
+        <!-- Riga 1: PI, PTY, AF1, AF2, TA, TP, Music, Debug -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto auto auto auto;gap:10px;align-items:end">
           <div class="ctrl-item">
             <div class="ctrl-lbl">PI (hex)</div>
             <input class="txt-input" id="rds-pi" maxlength="4" value="5253"
@@ -475,22 +482,144 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
                    onchange="sendCmd('PTY='+this.value)">
           </div>
           <div class="ctrl-item">
-            <div class="ctrl-lbl">AF1 (MHz×10)</div>
-            <input class="txt-input" id="rds-af1" type="number" value="0"
-                   onchange="sendCmd('AF1='+this.value)">
+            <div class="ctrl-lbl">AF1 (MHz, es. 98.0 — 0=off)</div>
+            <input class="txt-input" id="rds-af1" type="number" step="0.1" min="0" max="107.9" value="0"
+                   onchange="var f=parseFloat(this.value)||0; sendCmd('AF1='+(f>0?Math.round(f*10):0))">
           </div>
-          <div class="ctrl-item col-span-2" style="grid-column:1/-1">
-            <div class="ctrl-lbl">RT (64 chr)</div>
-            <input class="txt-input" id="rds-rt" maxlength="64" value="Benvenuti su Cursor Radio"
-                   onchange="sendCmd('RT='+this.value)">
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">AF2 (MHz, es. 99.0 — 0=off)</div>
+            <input class="txt-input" id="rds-af2" type="number" step="0.1" min="0" max="107.9" value="0"
+                   onchange="var f=parseFloat(this.value)||0; sendCmd('AF2='+(f>0?Math.round(f*10):0))">
           </div>
-          <div class="toggle-row" style="grid-column:1/-1">
+          <div class="toggle-row" style="margin:0">
             <span class="toggle-lbl tt" data-tip="Traffic Announcement">TA</span>
             <label class="toggle"><input type="checkbox" id="tog-ta" onchange="toggleAndSend('tog-ta','TA=')"><span class="tslider"></span></label>
-            <span class="toggle-lbl" style="margin-left:20px">Debug log</span>
+          </div>
+          <div class="toggle-row" style="margin:0">
+            <span class="toggle-lbl tt" data-tip="Traffic Programme — la stazione trasporta info traffico">TP</span>
+            <label class="toggle"><input type="checkbox" id="tog-tp" onchange="toggleAndSend('tog-tp','TP=')"><span class="tslider"></span></label>
+          </div>
+          <div class="toggle-row" style="margin:0">
+            <span class="toggle-lbl tt" data-tip="Music (on) / Speech (off)">Music</span>
+            <label class="toggle"><input type="checkbox" id="tog-ms" checked onchange="toggleAndSend('tog-ms','MS=')"><span class="tslider"></span></label>
+          </div>
+          <div class="toggle-row" style="margin:0">
+            <span class="toggle-lbl">Debug</span>
             <label class="toggle"><input type="checkbox" id="tog-debug" onchange="toggleAndSend('tog-debug','DEBUG=')"><span class="tslider"></span></label>
           </div>
         </div>
+
+        <!-- Separatore -->
+        <div style="border-top:1px solid var(--border);margin:0 -14px"></div>
+
+        <!-- Riga 2: PS cycling -->
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end">
+          <div class="ctrl-item" style="grid-column:span 1">
+            <div class="ctrl-lbl">PS lungo (16 chr — ciclato a blocchi da 8)</div>
+            <input class="txt-input" id="rds-ps-long" maxlength="16" value="MY RADIO"
+                   style="font-family:var(--mono);letter-spacing:2px"
+                   oninput="updatePsPreview(this.value)"
+                   onchange="saveRdsCfg()">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;justify-content:flex-end">
+            <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);letter-spacing:1px">ANTEPRIMA</div>
+            <div style="display:flex;gap:6px">
+              <span class="status-chip" style="font-size:12px;letter-spacing:2px;min-width:80px;justify-content:center" id="ps-prev1">MY RADI</span>
+              <span style="color:var(--text-dim);align-self:center">↔</span>
+              <span class="status-chip" style="font-size:12px;letter-spacing:2px;min-width:80px;justify-content:center" id="ps-prev2">O&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+            </div>
+          </div>
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">Ciclo PS (sec)</div>
+            <input class="txt-input" id="rds-ps-cycle" type="number" min="1" max="60" step="0.5" value="5"
+                   style="width:80px" onchange="saveRdsCfg()">
+          </div>
+        </div>
+
+        <!-- Riga 3: PS corrente in aria (read-only, aggiornato dal poll) -->
+        <div style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px;color:var(--text-dim)">
+          <span>PS in aria:</span>
+          <span class="status-chip" style="font-size:13px;letter-spacing:3px;color:var(--green)" id="rds-ps">MY_RADI</span>
+        </div>
+
+        <!-- Separatore -->
+        <div style="border-top:1px solid var(--border);margin:0 -14px"></div>
+
+        <!-- Riga 4: RT mode + Icecast URL -->
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center">
+          <div>
+            <div class="ctrl-lbl" style="margin-bottom:6px">Modalità RT</div>
+            <div style="display:flex;gap:12px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text-mid)">
+                <input type="radio" name="rt-mode" id="rt-mode-fixed" value="fixed" checked
+                       onchange="onRtModeChange()" style="accent-color:var(--blue)">
+                TESTO FISSO
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text-mid)">
+                <input type="radio" name="rt-mode" id="rt-mode-song" value="song"
+                       onchange="onRtModeChange()" style="accent-color:var(--green)">
+                TITOLO CANZONE
+              </label>
+            </div>
+          </div>
+          <div class="ctrl-item" id="rds-icecast-row">
+            <div class="ctrl-lbl">URL Icecast JSON</div>
+            <input class="txt-input" id="rds-icecast-url" type="url"
+                   value="http://nr9.newradio.it:9371/status-json.xsl"
+                   style="width:100%"
+                   onchange="saveRdsCfg()">
+          </div>
+        </div>
+
+        <!-- Riga 5: RT principale -->
+        <div class="ctrl-item" id="rds-rt-fixed-row">
+          <div class="ctrl-lbl" id="rds-rt-fixed-lbl">RT principale (64 chr — inviato completo)</div>
+          <input class="txt-input" id="rds-rt-fixed" maxlength="64"
+                 value="Ascolta la nostra radio!"
+                 style="width:100%"
+                 onchange="saveRdsCfg()">
+        </div>
+
+        <!-- Riga 6: RT alternativo + intervallo ciclo -->
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:end">
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">RT alternativo (64 chr — vuoto = nessun ciclo)</div>
+            <input class="txt-input" id="rds-rt-alt" maxlength="64" value=""
+                   placeholder="es. www.miaradio.it"
+                   style="width:100%"
+                   onchange="saveRdsCfg()">
+          </div>
+          <div class="ctrl-item">
+            <div class="ctrl-lbl">Ciclo RT (sec)</div>
+            <input class="txt-input" id="rds-rt-alt-sec" type="number" min="1" max="300" step="1" value="15"
+                   style="width:70px" onchange="saveRdsCfg()">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;justify-content:flex-end;padding-bottom:2px">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">SLOT ATTIVO</div>
+            <div class="status-chip" style="font-size:13px;color:var(--blue);min-width:50px;justify-content:center" id="rds-rt-slot">—</div>
+          </div>
+        </div>
+
+        <!-- Riga 7: stato in aria -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <div class="ctrl-lbl">Titolo in aria (Icecast)</div>
+            <div class="status-chip" style="width:100%;font-size:12px;color:var(--green);letter-spacing:1px;padding:6px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="rds-current-title">—</div>
+          </div>
+          <div>
+            <div class="ctrl-lbl">RT in onda ora</div>
+            <div class="status-chip" style="width:100%;font-size:12px;color:var(--blue);letter-spacing:1px;padding:6px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="rds-rt">—</div>
+          </div>
+        </div>
+
+        <!-- Riga 8: Intervallo fetch Icecast -->
+        <div id="rds-icecast-interval-row" style="display:flex;align-items:center;gap:10px">
+          <div class="ctrl-lbl" style="white-space:nowrap">Fetch Icecast ogni</div>
+          <input class="txt-input" id="rds-icecast-interval" type="number" min="5" max="300" step="5" value="15"
+                 style="width:70px" onchange="saveRdsCfg()">
+          <div class="ctrl-lbl">sec</div>
+        </div>
+
       </div>
     </div>
 
@@ -769,6 +898,61 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
 <!-- ═══════════════════════════════════════════ TAB SISTEMA ═══ -->
 <div class="page" id="tab-system">
   <div class="grid-2">
+
+    <!-- ═══ CATENA WEBRADIO ═══ -->
+    <div class="panel col-span-2">
+      <div class="panel-hdr">
+        <span class="panel-title">Catena Webradio</span>
+        <span id="chain-status-badge" style="font-size:12px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--border);color:var(--text-mid)">—</span>
+      </div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:14px">
+
+        <!-- Controlli avvio/stop -->
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn" id="btn-chain-start"   onclick="chainCmd('start')"  >▶ Start</button>
+          <button class="btn" id="btn-chain-stop"    onclick="chainCmd('stop')"   style="background:var(--red)">■ Stop</button>
+          <button class="btn" id="btn-chain-restart" onclick="chainCmd('restart')" style="background:var(--yellow);color:#000">↺ Restart</button>
+          <span style="color:var(--text-dim);font-size:12px;font-family:var(--mono)" id="chain-uptime"></span>
+        </div>
+
+        <!-- URL stream -->
+        <div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
+          <span class="ctrl-lbl">URL Stream</span>
+          <input class="txt-input" id="chain-url" type="url"
+                 value="http://nr9.newradio.it:9371/stream"
+                 placeholder="http://...">
+          <button class="btn" onclick="chainSaveUrl()" style="white-space:nowrap">Salva URL</button>
+        </div>
+
+        <!-- Flowgraph selezionato -->
+        <div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
+          <span class="ctrl-lbl">Flowgraph</span>
+          <input class="txt-input" id="chain-flowgraph" type="text"
+                 value="flowgraphs/rds_rx.py" placeholder="flowgraphs/xxx.py">
+          <div class="toggle-row" style="margin:0;gap:6px">
+            <span class="toggle-lbl tt" data-tip="Riavvio automatico se la catena si ferma">Auto-restart</span>
+            <label class="toggle">
+              <input type="checkbox" id="tog-chain-restart"
+                     onchange="chainSaveCfg()">
+              <span class="tslider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Log processo -->
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="ctrl-lbl">Log processi</span>
+            <button class="btn" style="font-size:11px;padding:2px 8px" onclick="document.getElementById('chain-log').textContent=''">Pulisci</button>
+          </div>
+          <pre id="chain-log"
+               style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;
+                      padding:8px 10px;font-size:11px;font-family:var(--mono);color:var(--text-mid);
+                      height:160px;overflow-y:auto;white-space:pre-wrap;margin:0"></pre>
+        </div>
+
+      </div>
+    </div>
 
     <!-- EEPROM -->
     <div class="panel">
@@ -1238,11 +1422,15 @@ async function pollStatus() {
     }
     if (p.debug != null) syncCheck('tog-debug', p.debug);
     if (p.ta != null)    syncCheck('tog-ta',    p.ta);
+    if (p.tp != null)    syncCheck('tog-tp',    p.tp);
+    if (p.ms != null)    syncCheck('tog-ms',    p.ms);
     syncText('rds-ps',  p.ps);
     syncText('rds-rt',  p.rt);
     syncText('rds-pi',  p.pi);
     syncText('rds-pty', p.pty != null ? String(p.pty) : null);
-    syncText('rds-af1', p.af1 != null ? String(p.af1) : null);
+    /* AF1/AF2: il modulatore le restituisce in MHz×10; mostrare in MHz con 1 decimale */
+    if (p.af1 != null) syncText('rds-af1', p.af1 > 0 ? (p.af1 / 10).toFixed(1) : '0');
+    if (p.af2 != null) syncText('rds-af2', p.af2 > 0 ? (p.af2 / 10).toFixed(1) : '0');
 
     // Comp params
     if (p.comp_thr   != null) { P.thr=p.comp_thr;   document.getElementById('sl-thr').value=p.comp_thr;   document.getElementById('lbl-thr').textContent=p.comp_thr.toFixed(1)+' dBFS'; }
@@ -1350,8 +1538,12 @@ function syncSlider(slId, lblId, val, fmt) {
 function syncText(id, val) {
   if (val == null) return;
   const el = document.getElementById(id);
-  if (el && document.activeElement !== el)
+  if (!el || document.activeElement === el) return;
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
     el.value = val;
+  } else {
+    el.textContent = val;
+  }
 }
 
 // Mappa dei toggle con update pendente: id → timestamp dell'ultimo click
@@ -1386,6 +1578,110 @@ function toggleAndSend(id, cmd) {
 }
 
 // ─────────────────────────────────────────────
+// RDS avanzato
+// ─────────────────────────────────────────────
+function updatePsPreview(val) {
+  const s = val.padEnd(16, ' ');
+  document.getElementById('ps-prev1').textContent = s.slice(0,8);
+  document.getElementById('ps-prev2').textContent = s.slice(8,16) || '        ';
+}
+
+function onRtModeChange() {
+  const mode = document.querySelector('input[name="rt-mode"]:checked').value;
+  const isSong = mode === 'song';
+  document.getElementById('rds-icecast-row').style.opacity          = isSong ? '1' : '0.4';
+  document.getElementById('rds-icecast-row').style.pointerEvents    = isSong ? '' : 'none';
+  document.getElementById('rds-icecast-interval-row').style.opacity = isSong ? '1' : '0.4';
+  document.getElementById('rds-icecast-interval-row').style.pointerEvents = isSong ? '' : 'none';
+  document.getElementById('rds-rt-fixed-row').style.opacity         = isSong ? '0.4' : '1';
+  document.getElementById('rds-rt-fixed-row').style.pointerEvents   = isSong ? 'none' : '';
+  saveRdsCfg();
+}
+
+async function saveRdsCfg() {
+  const mode = document.querySelector('input[name="rt-mode"]:checked')?.value || 'fixed';
+  const body = {
+    ps_long:              document.getElementById('rds-ps-long').value,
+    ps_cycle_sec:         parseFloat(document.getElementById('rds-ps-cycle').value) || 5,
+    rt_mode:              mode,
+    rt_fixed:             document.getElementById('rds-rt-fixed').value,
+    rt_alt:               document.getElementById('rds-rt-alt').value,
+    rt_alt_sec:           parseFloat(document.getElementById('rds-rt-alt-sec').value) || 15,
+    icecast_url:          document.getElementById('rds-icecast-url').value,
+    icecast_interval_sec: parseFloat(document.getElementById('rds-icecast-interval').value) || 15,
+  };
+  try {
+    await fetch('/api/rds/config', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+  } catch(e) {}
+}
+
+async function pollRdsStatus() {
+  try {
+    const r = await fetch('/api/rds/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    const cfg = d.cfg || {};
+    const rs  = d.state || {};
+
+    // Aggiorna campi solo se non in focus
+    const syncCfgText = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && document.activeElement !== el) el.value = val ?? el.value;
+    };
+
+    syncCfgText('rds-ps-long',          cfg.ps_long);
+    syncCfgText('rds-ps-cycle',         cfg.ps_cycle_sec);
+    syncCfgText('rds-rt-fixed',         cfg.rt_fixed);
+    syncCfgText('rds-rt-alt',           cfg.rt_alt);
+    syncCfgText('rds-rt-alt-sec',       cfg.rt_alt_sec);
+    syncCfgText('rds-icecast-url',      cfg.icecast_url);
+    syncCfgText('rds-icecast-interval', cfg.icecast_interval_sec);
+
+    if (cfg.rt_mode) {
+      const radio = document.getElementById('rt-mode-' + cfg.rt_mode);
+      if (radio && !radio.checked) { radio.checked = true; onRtModeChange(); }
+    }
+    if (cfg.ps_long) updatePsPreview(cfg.ps_long);
+
+    // Etichetta RT principale: varia con la modalità
+    const lbl = document.getElementById('rds-rt-fixed-lbl');
+    if (lbl) lbl.textContent = cfg.rt_mode === 'song'
+      ? 'RT alternativo al titolo (64 chr — es. slogan/URL)'
+      : 'RT principale (64 chr — inviato completo)';
+
+    // Titolo corrente (Icecast)
+    const titleEl = document.getElementById('rds-current-title');
+    if (titleEl) titleEl.textContent = rs.current_title || '—';
+
+    // RT in onda ora
+    const rtEl = document.getElementById('rds-rt');
+    if (rtEl) rtEl.textContent = rs.current_rt || '—';
+
+    // Slot attivo RT (Principale / Alternativo)
+    const slotEl = document.getElementById('rds-rt-slot');
+    if (slotEl) {
+      const hasAlt = cfg.rt_alt && cfg.rt_alt.trim();
+      slotEl.textContent = !hasAlt ? '—' : (rs.rt_slot === 1 ? 'ALT' : 'MAIN');
+      slotEl.style.color = rs.rt_slot === 1 ? 'var(--orange)' : 'var(--blue)';
+    }
+
+    // Indicatore on-air nella testata pannello
+    const oaEl = document.getElementById('rds-on-air-lbl');
+    if (oaEl) {
+      const rtSlot = rs.rt_slot === 1 ? 'ALT' : 'MAIN';
+      const psH    = rs.ps_half  === 1 ? '2/2' : '1/2';
+      oaEl.textContent = `RT:${rtSlot} · PS:${psH}`;
+    }
+
+  } catch(e) {}
+  setTimeout(pollRdsStatus, 2000);
+}
+
+// ─────────────────────────────────────────────
 // Animation loop
 // ─────────────────────────────────────────────
 let lastCurveDraw = 0;
@@ -1403,6 +1699,112 @@ function frame(ts) {
 drawCurve();
 requestAnimationFrame(frame);
 pollStatus();
+pollRdsStatus();
+onRtModeChange();
+updatePsPreview(document.getElementById('rds-ps-long').value);
+
+// ─────────────────────────────────────────────
+// Catena Webradio
+// ─────────────────────────────────────────────
+
+const CHAIN_STATUS_COLOR = {
+  stopped:  'var(--text-dim)',
+  starting: 'var(--yellow)',
+  running:  'var(--green)',
+  error:    'var(--red)',
+  stopping: 'var(--yellow)',
+};
+const CHAIN_STATUS_LABEL = {
+  stopped:  '● STOP',
+  starting: '◌ AVVIO…',
+  running:  '● IN ARIA',
+  error:    '✖ ERRORE',
+  stopping: '◌ STOP…',
+};
+
+let _chainLogLines = [];
+
+function pollChainStatus() {
+  fetch('/api/chain/status')
+    .then(r => r.json())
+    .then(d => {
+      const st = d.status || 'stopped';
+      const badge = document.getElementById('chain-status-badge');
+      if (badge) {
+        badge.textContent = CHAIN_STATUS_LABEL[st] || st;
+        badge.style.color = CHAIN_STATUS_COLOR[st] || 'var(--text-mid)';
+        badge.style.background = st === 'running' ? 'rgba(0,200,80,0.12)' :
+                                 st === 'error'   ? 'rgba(255,60,60,0.12)' : 'var(--border)';
+      }
+      const up = document.getElementById('chain-uptime');
+      if (up) {
+        if (st === 'running' && d.uptime_sec != null) {
+          const h = Math.floor(d.uptime_sec/3600);
+          const m = Math.floor((d.uptime_sec%3600)/60);
+          const s = d.uptime_sec%60;
+          up.textContent = `uptime ${h}h${String(m).padStart(2,'0')}m${String(s).padStart(2,'0')}s`;
+        } else {
+          up.textContent = d.error ? `⚠ ${d.error}` : '';
+        }
+      }
+      // sincronizza cfg → UI (senza sovrascrivere se focus)
+      const urlEl  = document.getElementById('chain-url');
+      const flowEl = document.getElementById('chain-flowgraph');
+      const arEl   = document.getElementById('tog-chain-restart');
+      if (d.cfg) {
+        if (urlEl  && document.activeElement !== urlEl)  urlEl.value  = d.cfg.stream_url || '';
+        if (flowEl && document.activeElement !== flowEl) flowEl.value = d.cfg.flowgraph  || '';
+        if (arEl)  arEl.checked = !!d.cfg.auto_restart;
+      }
+      // log
+      if (d.log && d.log.length) {
+        const logEl = document.getElementById('chain-log');
+        if (logEl) {
+          // aggiungi solo le righe nuove
+          const newLines = d.log.filter(l => !_chainLogLines.includes(l));
+          if (newLines.length) {
+            _chainLogLines = d.log;
+            logEl.textContent = d.log.join('\n');
+            logEl.scrollTop = logEl.scrollHeight;
+          }
+        }
+      }
+    })
+    .catch(() => {});
+  setTimeout(pollChainStatus, 2000);
+}
+
+function chainCmd(cmd) {
+  fetch(`/api/chain/${cmd}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => { if (!d.ok) alert('Errore: ' + (d.error || '?')); })
+    .catch(e => alert('Errore connessione: ' + e));
+}
+
+function chainSaveUrl() {
+  const url = document.getElementById('chain-url').value.trim();
+  if (!url) return;
+  fetch('/api/chain/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stream_url: url }),
+  });
+}
+
+function chainSaveCfg() {
+  const flowEl = document.getElementById('chain-flowgraph');
+  const arEl   = document.getElementById('tog-chain-restart');
+  fetch('/api/chain/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      flowgraph:    flowEl ? flowEl.value.trim() : undefined,
+      auto_restart: arEl   ? arEl.checked        : false,
+    }),
+  });
+}
+
+pollChainStatus();
 </script>
 </body>
 </html>

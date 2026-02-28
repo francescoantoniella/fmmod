@@ -18,6 +18,7 @@ from collections import deque
 
 from bottle import Bottle, static_file, request, response, run
 from storage import Storage
+from chain_manager import ChainManager
 
 # ─────────────────────────────────────────────
 # Configurazione
@@ -30,13 +31,11 @@ WEB_PORT = 8080
 
 LOG_DIR  = "/tmp/fmmod_logs"
 DATA_CSV = os.path.join(LOG_DIR, "sensors.csv")
-EEPROM_FILE = os.path.join(LOG_DIR, "eeprom.json")   # backup EEPROM su disco
 
-# Sensori I2C — modifica gli indirizzi in base al tuo hardware
-I2C_BUS          = 1       # /dev/i2c-1
-ADDR_ADC         = 0x48    # ADS1115: temperatura + VSWR
-ADDR_DAC         = 0x60    # MCP4725: controllo potenza
-ADDR_EEPROM      = 0x50    # AT24C32 o simile
+# Sensori I2C (ADC/DAC) — la EEPROM è gestita da storage.py
+I2C_BUS  = 1       # /dev/i2c-1
+ADDR_ADC = 0x48    # ADS1115
+ADDR_DAC = 0x60    # MCP4725
 
 # Soglie allarmi
 ALARM_TEMP_MAX   = 65.0    # °C
@@ -113,7 +112,7 @@ class State:
             "debug": False, "mute": False,
             "tx_freq": 100.0, "tx_gain": -17.0,
             "ps": "MY_RADIO", "rt": "Benvenuti su Cursor Radio",
-            "pi": "5253", "pty": 2, "ta": 0, "af1": 0,
+            "pi": "5253", "pty": 2, "ta": 0, "tp": 0, "ms": 1, "af1": 0,
             # Compressore
             "comp_en": True, "comp_thr": -18.0, "comp_ratio": 4.0,
             "comp_knee": 6.0, "comp_atk": 5.0, "comp_rel": 150.0,
@@ -167,6 +166,27 @@ class State:
         self.pid = PIDController(PID_KP, PID_KI, PID_KD)
         self.power_target_w = 5.0   # watt target per il PID
 
+        # ── RDS avanzato ─────────────────────────────────────────────────────
+        self.rds_cfg = {
+            "radio_name":           "My Radio",
+            "icecast_url":          "http://nr9.newradio.it:9371/status-json.xsl",
+            "rt_mode":              "fixed",   # "fixed" | "song"
+            # Modalità fixed: alterna tra rt_fixed e rt_alt (se rt_alt non vuoto)
+            "rt_fixed":             "Ascolta la nostra radio!",
+            "rt_alt":               "",        # testo alternativo (es. URL stream); vuoto = no ciclo
+            "rt_alt_sec":           15.0,      # secondi tra alternanza rt_fixed ↔ rt_alt
+            # Modalità song: titolo Icecast come RT principale; rt_alt come testo alternativo
+            "ps_long":              "MY RADIO",  # fino a 16 chr → ciclato in blocchi da 8
+            "ps_cycle_sec":         5.0,          # secondi tra alternanza PS
+            "icecast_interval_sec": 15.0,         # polling Icecast (sec)
+        }
+        self.rds_state = {
+            "current_title": "",   # titolo corrente da Icecast
+            "current_rt":    "",   # RT principale attualmente in uso (testo completo)
+            "rt_slot":       0,    # 0=RT principale, 1=RT alternativo
+            "ps_half":       0,    # 0=prima metà PS, 1=seconda metà PS
+        }
+
 state = State()
 
 # Storage unificato (EEPROM su RPi, JSON altrove)
@@ -219,6 +239,8 @@ def poll_modulatore():
                             elif k == "pi":        m["pi"]         = v
                             elif k == "pty":       m["pty"]        = int(v)
                             elif k == "ta":        m["ta"]         = int(v)
+                            elif k == "tp":        m["tp"]         = int(v)
+                            elif k == "ms":        m["ms"]         = int(v)
                             elif k == "af1":       m["af1"]        = int(v)
                             # Compressore parametri
                             elif k == "comp_en":    m["comp_en"]    = v == "1"
@@ -287,99 +309,6 @@ def write_dac(value: int):
     except Exception as e:
         log.warning(f"DAC write {value}: {e}")
 
-def read_eeprom(addr: int, length: int) -> bytes:
-    """Legge dalla EEPROM I2C."""
-    if not HAS_I2C:
-        return bytes(length)
-    try:
-        _bus.write_i2c_block_data(ADDR_EEPROM, (addr >> 8) & 0xFF, [addr & 0xFF])
-        time.sleep(0.005)
-        return bytes(_bus.read_i2c_block_data(ADDR_EEPROM, 0, length))
-    except Exception as e:
-        log.warning(f"EEPROM read @{addr}: {e}")
-        return bytes(length)
-
-def write_eeprom(addr: int, data: bytes):
-    """Scrive sulla EEPROM I2C (max 32 byte per write cycle)."""
-    if not HAS_I2C:
-        return
-    try:
-        chunk = 32
-        for i in range(0, len(data), chunk):
-            block = list(data[i:i+chunk])
-            a = addr + i
-            _bus.write_i2c_block_data(ADDR_EEPROM, (a >> 8) & 0xFF, [a & 0xFF] + block)
-            time.sleep(0.010)
-    except Exception as e:
-        log.warning(f"EEPROM write @{addr}: {e}")
-
-# ─────────────────────────────────────────────
-# EEPROM settings (load/save)
-# ─────────────────────────────────────────────
-EEPROM_MAGIC    = 0xFE01   # versione struttura settings
-EEPROM_SN_MAGIC = 0xFE02   # versione struttura serializzazione
-SN_EEPROM_OFFSET    = 0x00  # SN @ inizio EEPROM
-SETTINGS_EEPROM_OFFSET = 0x80  # settings JSON dopo il blocco SN
-SN_LOCAL_FILE = "/opt/fmmod/.serial"  # fallback se EEPROM non disponibile
-
-def read_sn() -> str | None:
-    """Legge il numero di serie da EEPROM o file locale."""
-    # Prova EEPROM
-    raw = read_eeprom(SN_EEPROM_OFFSET, 0x14)
-    if len(raw) >= 20:
-        magic = struct.unpack_from(">H", raw, 0)[0]
-        if magic == EEPROM_SN_MAGIC:
-            sn_bytes = raw[2:18]
-            crc_stored = struct.unpack_from(">H", raw, 18)[0]
-            # CRC16 CCITT
-            crc = 0xFFFF
-            for b in sn_bytes:
-                crc ^= b << 8
-                for _ in range(8):
-                    crc = ((crc << 1) ^ 0x1021) if crc & 0x8000 else (crc << 1)
-                    crc &= 0xFFFF
-            if crc == crc_stored:
-                return sn_bytes.rstrip(b'\x00').decode('ascii')
-    # Fallback file locale
-    if os.path.exists(SN_LOCAL_FILE):
-        try:
-            with open(SN_LOCAL_FILE) as f:
-                return f.read().strip()
-        except Exception:
-            pass
-    return None
-
-def eeprom_load() -> dict | None:
-    """Carica settings da EEPROM offset 0x80 (o file backup)."""
-    # Prova prima EEPROM hardware (offset 0x80)
-    raw = read_eeprom(SETTINGS_EEPROM_OFFSET, 128)
-    magic = struct.unpack_from(">H", raw, 0)[0]
-    if magic == EEPROM_MAGIC:
-        try:
-            length = struct.unpack_from(">H", raw, 2)[0]
-            js = raw[4:4+length].decode("utf-8")
-            return json.loads(js)
-        except Exception:
-            pass
-    # Fallback su file
-    if os.path.exists(EEPROM_FILE):
-        try:
-            with open(EEPROM_FILE) as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return None
-
-def eeprom_save(settings: dict):
-    """Salva settings su EEPROM e file backup."""
-    js = json.dumps(settings).encode("utf-8")
-    raw = struct.pack(">HH", EEPROM_MAGIC, len(js)) + js
-    raw += bytes(128 - len(raw)) if len(raw) < 128 else b""
-    write_eeprom(SETTINGS_EEPROM_OFFSET, raw[:128])
-    # Backup su file
-    with open(EEPROM_FILE, "w") as f:
-        json.dump(settings, f, indent=2)
-    log.info("Settings salvati su EEPROM + file")
 
 # ─────────────────────────────────────────────
 # Conversione tensione → grandezze fisiche
@@ -510,9 +439,134 @@ def softstart_thread(target_dac: int):
     log.info("Soft-start completato")
 
 # ─────────────────────────────────────────────
+# RDS Manager — PS cycling, RT cycling, Icecast
+# ─────────────────────────────────────────────
+try:
+    import requests as _requests
+    HAS_REQUESTS = True
+except ImportError:
+    _requests = None
+    HAS_REQUESTS = False
+    log.warning("'requests' non installato — fetch Icecast disabilitato")
+
+
+def _fetch_icecast_title(url: str) -> str | None:
+    """Legge il titolo dalla JSON status di Icecast."""
+    if not HAS_REQUESTS:
+        return None
+    try:
+        r = _requests.get(url, timeout=5)
+        data = r.json()
+        source = data.get("icestats", {}).get("source")
+        if source is None:
+            return None
+        if isinstance(source, list):
+            title = source[0].get("title", "")
+        else:
+            title = source.get("title", "")
+        return title.strip() or None
+    except Exception as e:
+        log.debug(f"Icecast fetch: {e}")
+        return None
+
+
+def _ps_halves(ps_long: str) -> tuple[str, str]:
+    """Divide ps_long (max 16 chr) in due PS da 8 chr padded."""
+    ps = ps_long.ljust(16)[:16]
+    return ps[:8], ps[8:]
+
+
+def rds_manager_thread():
+    """
+    Gestisce in modo autonomo:
+      - Alternanza PS (ps_long[:8] ↔ ps_long[8:]) ogni ps_cycle_sec
+      - Fetch Icecast ogni icecast_interval_sec (modalità 'song')
+      - Alternanza RT tra testo principale e testo alternativo (rt_alt) ogni rt_alt_sec.
+        Il testo viene sempre inviato COMPLETO (max 64 chr): è il modulatore C++
+        a ciclarlo autonomamente sui gruppi RDS 2A — non serve spezzarlo qui.
+    """
+    last_icecast_fetch = 0.0
+    last_ps_switch     = 0.0
+    last_rt_switch     = 0.0
+
+    while True:
+        now = time.time()
+
+        with state.lock:
+            cfg = dict(state.rds_cfg)
+            rs  = dict(state.rds_state)
+
+        # ── Fetch Icecast (solo in modalità 'song') ───────────────────────────
+        if cfg["rt_mode"] == "song":
+            if now - last_icecast_fetch >= cfg["icecast_interval_sec"]:
+                last_icecast_fetch = now
+                title = _fetch_icecast_title(cfg["icecast_url"])
+                if title and title != rs["current_title"]:
+                    log.info(f"Icecast → nuovo titolo: {title}")
+                    rt = title[:64]
+                    with state.lock:
+                        state.rds_state["current_title"] = title
+                        state.rds_state["current_rt"]    = rt
+                        state.rds_state["rt_slot"]       = 0
+                    # Invia subito il titolo completo
+                    send_cmd(f"RT={rt}")
+                    last_rt_switch = now
+
+        # ── Alternanza PS ─────────────────────────────────────────────────────
+        if now - last_ps_switch >= cfg["ps_cycle_sec"]:
+            last_ps_switch = now
+            ps1, ps2 = _ps_halves(cfg["ps_long"])
+            do_cycle = bool(ps2.strip())  # cicla solo se la seconda metà è non vuota
+            with state.lock:
+                if do_cycle:
+                    next_half = 1 - state.rds_state["ps_half"]
+                else:
+                    next_half = 0
+                state.rds_state["ps_half"] = next_half
+            ps_to_send = ps1 if next_half == 0 else ps2
+            # Invia sempre ps1 se non c'è seconda metà; invia entrambe se c'è ciclo
+            if do_cycle or next_half == 0:
+                send_cmd(f"PS={ps_to_send}")
+                log.debug(f"PS → '{ps_to_send}' (slot={next_half}, ciclo={'sì' if do_cycle else 'no'})")
+
+        # ── Alternanza RT principale ↔ alternativo ────────────────────────────
+        # Solo se rt_alt non è vuoto e l'intervallo è scaduto
+        rt_alt = cfg.get("rt_alt", "").strip()
+        rt_alt_sec = cfg.get("rt_alt_sec", 15.0)
+        if rt_alt and now - last_rt_switch >= rt_alt_sec:
+            last_rt_switch = now
+            with state.lock:
+                next_slot = 1 - state.rds_state["rt_slot"]
+                state.rds_state["rt_slot"] = next_slot
+                if cfg["rt_mode"] == "fixed":
+                    rt_main = cfg["rt_fixed"]
+                else:
+                    rt_main = state.rds_state["current_rt"] or cfg["rt_fixed"]
+            rt_to_send = rt_alt if next_slot == 1 else rt_main
+            if rt_to_send:
+                send_cmd(f"RT={rt_to_send[:64]}")
+                log.debug(f"RT → slot {next_slot}: '{rt_to_send[:40]}...'")
+        elif not rt_alt and cfg["rt_mode"] == "fixed":
+            # Nessun alternativo: invia RT fisso una volta sola quando cambia
+            rt_fixed = cfg["rt_fixed"]
+            if rt_fixed != rs.get("current_rt", ""):
+                with state.lock:
+                    state.rds_state["current_rt"] = rt_fixed
+                send_cmd(f"RT={rt_fixed[:64]}")
+                log.debug(f"RT fisso → '{rt_fixed[:40]}'")
+
+        time.sleep(0.5)
+
+
+# ─────────────────────────────────────────────
 # Bottle App
 # ─────────────────────────────────────────────
 app = Bottle()
+
+# ─── Catena webradio ──────────────────────────────
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+chain = ChainManager(base_dir=_BASE_DIR)
+
 
 def json_resp(data):
     response.content_type = "application/json"
@@ -557,39 +611,125 @@ def api_history():
             "comp_gr":list(state.history["comp_gr"]),
         })
 
-# ── API: save/load EEPROM ────────────────────
+# ── API: save/load EEPROM (multi-gruppo) ─────
 @app.route("/api/eeprom/save", method="POST")
 def api_eeprom_save():
+    results = {}
     with state.lock:
-        settings = dict(state.params)
-        settings["power_target_w"] = state.power_target_w
-    ok = storage.save_settings(settings)
-    return json_resp({"ok": ok, "backend": storage.backend_name})
+        p   = state.params
+        cfg = state.rds_cfg
+
+        results["tx_audio"] = storage.save_group("tx_audio", {
+            "gain": p["gain"], "vol_pilot": p["vol_pilot"],
+            "vol_rds": p["vol_rds"], "vol_mono": p["vol_mono"],
+            "vol_stereo": p["vol_stereo"], "preemph": p["preemph"],
+            "deemph": p["deemph"], "tx_freq": p["tx_freq"],
+            "tx_gain": p["tx_gain"], "mute": p["mute"],
+            "pi": p["pi"], "pty": p["pty"], "ta": p["ta"],
+            "tp": p["tp"], "ms": p["ms"], "af1": p["af1"],
+        })
+        results["compressor"] = storage.save_group("compressor", {
+            "comp_en": p["comp_en"], "comp_thr": p["comp_thr"],
+            "comp_ratio": p["comp_ratio"], "comp_knee": p["comp_knee"],
+            "comp_atk": p["comp_atk"], "comp_rel": p["comp_rel"],
+            "comp_mu": p["comp_mu"], "comp_lim": p["comp_lim"],
+        })
+        results["rds_cfg"] = storage.save_group("rds_cfg", {
+            "rt_mode": cfg["rt_mode"],
+            "rt_alt_sec": cfg["rt_alt_sec"],
+            "ps_long": cfg["ps_long"],
+            "ps_cycle_sec": cfg["ps_cycle_sec"],
+            "radio_name": cfg["radio_name"],
+            "icecast_url": cfg["icecast_url"],
+            "icecast_interval_sec": cfg["icecast_interval_sec"],
+        })
+        results["rds_text"] = storage.save_group("rds_text", {
+            "rt_fixed": cfg["rt_fixed"],
+            "rt_alt":   cfg["rt_alt"],
+        })
+        results["power_pid"] = storage.save_group("power_pid", {
+            "power_target_w": state.power_target_w,
+            "kp": state.pid.kp, "ki": state.pid.ki, "kd": state.pid.kd,
+            "alarm_temp_max": ALARM_TEMP_MAX,
+            "alarm_swr_max":  ALARM_SWR_MAX,
+            "alarm_fwd_min":  ALARM_FWD_MIN,
+            "alarm_fwd_max":  ALARM_FWD_MAX,
+        })
+
+    ok = all(results.values())
+    log.info("EEPROM save: %s", results)
+    return json_resp({"ok": ok, "groups": results, "backend": storage.backend_name})
+
 
 @app.route("/api/eeprom/load", method="POST")
 def api_eeprom_load():
-    s = storage.load_settings()
-    if s is None:
-        return json_resp({"ok": False, "error": "nessun dato salvato",
+    loaded = {}
+
+    tx = storage.load_group("tx_audio")
+    if tx:
+        loaded["tx_audio"] = True
+        cmd_map = {
+            "gain": "GAIN", "vol_pilot": "VOL_PILOT", "vol_rds": "VOL_RDS",
+            "vol_mono": "VOL_MONO", "vol_stereo": "VOL_STEREO",
+            "preemph": "PREEMPH", "deemph": "DEEMPH",
+            "tx_freq": "TX_FREQ", "tx_gain": "TX_GAIN",
+            "pi": "PI", "pty": "PTY", "af1": "AF1", "ta": "TA", "tp": "TP",
+        }
+        for k, cmd in cmd_map.items():
+            if k in tx:
+                send_cmd(f"{cmd}={tx[k]}")
+        if "mute" in tx:
+            send_cmd(f"MUTE={'1' if tx['mute'] else '0'}")
+        if "ms" in tx:
+            send_cmd(f"MS={'1' if tx['ms'] else '0'}")
+        with state.lock:
+            state.params.update({k: v for k, v in tx.items() if k in state.params})
+
+    comp = storage.load_group("compressor")
+    if comp:
+        loaded["compressor"] = True
+        cmd_map_c = {
+            "comp_thr": "COMP_THR", "comp_ratio": "COMP_RATIO",
+            "comp_knee": "COMP_KNEE", "comp_atk": "COMP_ATK",
+            "comp_rel": "COMP_REL", "comp_mu": "COMP_MU",
+            "comp_lim": "COMP_LIM",
+        }
+        for k, cmd in cmd_map_c.items():
+            if k in comp:
+                send_cmd(f"{cmd}={comp[k]}")
+        if "comp_en" in comp:
+            send_cmd(f"COMP_EN={'1' if comp['comp_en'] else '0'}")
+        with state.lock:
+            state.params.update({k: v for k, v in comp.items() if k in state.params})
+
+    rds_c = storage.load_group("rds_cfg")
+    rds_t = storage.load_group("rds_text")
+    if rds_c or rds_t:
+        loaded["rds"] = True
+        with state.lock:
+            if rds_c:
+                for k in ("rt_mode","rt_alt_sec","ps_long","ps_cycle_sec",
+                          "radio_name","icecast_url","icecast_interval_sec"):
+                    if k in rds_c:
+                        state.rds_cfg[k] = rds_c[k]
+            if rds_t:
+                if "rt_fixed" in rds_t: state.rds_cfg["rt_fixed"] = rds_t["rt_fixed"]
+                if "rt_alt"   in rds_t: state.rds_cfg["rt_alt"]   = rds_t["rt_alt"]
+
+    pp = storage.load_group("power_pid")
+    if pp:
+        loaded["power_pid"] = True
+        with state.lock:
+            if "power_target_w" in pp: state.power_target_w = pp["power_target_w"]
+            if "kp" in pp: state.pid.kp = pp["kp"]
+            if "ki" in pp: state.pid.ki = pp["ki"]
+            if "kd" in pp: state.pid.kd = pp["kd"]
+
+    if not loaded:
+        return json_resp({"ok": False, "error": "nessun dato in EEPROM",
                           "backend": storage.backend_name})
-    cmd_map = {
-        "gain": "GAIN", "vol_pilot": "VOL_PILOT", "vol_rds": "VOL_RDS",
-        "vol_mono": "VOL_MONO", "vol_stereo": "VOL_STEREO",
-        "preemph": "PREEMPH", "deemph": "DEEMPH",
-        "tx_freq": "TX_FREQ", "tx_gain": "TX_GAIN",
-        "ps": "PS", "rt": "RT", "pi": "PI", "pty": "PTY",
-        "comp_thr": "COMP_THR", "comp_ratio": "COMP_RATIO",
-        "comp_knee": "COMP_KNEE", "comp_atk": "COMP_ATK",
-        "comp_rel": "COMP_REL", "comp_mu": "COMP_MU",
-    }
-    for k, cmd in cmd_map.items():
-        if k in s:
-            send_cmd(f"{cmd}={s[k]}")
-    with state.lock:
-        state.params.update({k: v for k, v in s.items() if k in state.params})
-        if "power_target_w" in s:
-            state.power_target_w = s["power_target_w"]
-    return json_resp({"ok": True, "settings": s, "backend": storage.backend_name})
+    log.info("EEPROM load: %s", loaded)
+    return json_resp({"ok": True, "loaded": loaded, "backend": storage.backend_name})
 
 # ── API: soft-start ──────────────────────────
 @app.route("/api/softstart", method="POST")
@@ -620,34 +760,135 @@ def api_pid():
 def api_csv():
     return static_file("sensors.csv", root=LOG_DIR, download="sensors.csv")
 
+# ── API: RDS config (GET / POST) ─────────────
+@app.route("/api/rds/config", method=["GET", "POST"])
+def api_rds_config():
+    if request.method == "POST":
+        data = request.json or {}
+        with state.lock:
+            cfg = state.rds_cfg
+            for key in ("radio_name", "icecast_url", "rt_mode", "rt_fixed",
+                        "rt_alt", "rt_alt_sec", "ps_long", "ps_cycle_sec",
+                        "icecast_interval_sec"):
+                if key in data:
+                    val = data[key]
+                    if key in ("ps_cycle_sec", "rt_alt_sec", "icecast_interval_sec"):
+                        val = max(1.0, float(val))
+                    cfg[key] = val
+            cfg["ps_long"]  = str(cfg["ps_long"])[:16]
+            cfg["rt_fixed"] = str(cfg["rt_fixed"])[:64]
+            cfg["rt_alt"]   = str(cfg.get("rt_alt", ""))[:64]
+        log.info(f"RDS config aggiornata: {data}")
+        return json_resp({"ok": True})
+    with state.lock:
+        return json_resp(dict(state.rds_cfg))
+
+# ── API: RDS stato corrente ───────────────────
+@app.route("/api/rds/status")
+def api_rds_status():
+    with state.lock:
+        cfg = dict(state.rds_cfg)
+        rs  = dict(state.rds_state)
+        ps1, ps2 = _ps_halves(cfg["ps_long"])
+    return json_resp({
+        "cfg":   cfg,
+        "state": rs,
+        "ps1":   ps1,
+        "ps2":   ps2,
+    })
+
+# ── Serve font locali ────────────────────────
+@app.route("/fonts/<filename>")
+def serve_fonts(filename):
+    return static_file(filename, root=os.path.join(os.path.dirname(__file__), "fonts"))
+
 # ── Serve HTML ───────────────────────────────
 @app.route("/")
 @app.route("/index.html")
 def index():
     return static_file("index.html", root=os.path.dirname(__file__))
 
+
+# ─────────────────────────────────────────────
+# API: Catena webradio
+# ─────────────────────────────────────────────
+
+@app.route("/api/chain/status")
+def api_chain_status():
+    return json_resp(chain.status())
+
+@app.route("/api/chain/start", method="POST")
+def api_chain_start():
+    return json_resp(chain.start())
+
+@app.route("/api/chain/stop", method="POST")
+def api_chain_stop():
+    return json_resp(chain.stop())
+
+@app.route("/api/chain/restart", method="POST")
+def api_chain_restart():
+    return json_resp(chain.restart())
+
+@app.route("/api/chain/config", method=["GET", "POST"])
+def api_chain_config():
+    if request.method == "POST":
+        data = request.json or {}
+        return json_resp(chain.update_cfg(data))
+    return json_resp(chain.status()["cfg"])
+
+
 # ─────────────────────────────────────────────
 # Avvio
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    # Leggi numero di serie
+    # Numero di serie
     state.serial_number = storage.read_sn()
     if state.serial_number:
         log.info(f"Numero di serie: {state.serial_number}")
     else:
-        log.warning("Nessun numero di serie trovato in EEPROM")
+        log.warning("Nessun numero di serie in EEPROM")
 
-    # Carica settings da storage all'avvio
-    saved = storage.load_settings()
-    if saved:
-        log.info("Settings caricati da EEPROM")
+    # Carica tutti i gruppi all'avvio
+    tx = storage.load_group("tx_audio")
+    if tx:
         with state.lock:
-            state.params.update({k: v for k, v in saved.items() if k in state.params})
+            state.params.update({k: v for k, v in tx.items() if k in state.params})
+        log.info("EEPROM: tx_audio caricato")
+
+    comp = storage.load_group("compressor")
+    if comp:
+        with state.lock:
+            state.params.update({k: v for k, v in comp.items() if k in state.params})
+        log.info("EEPROM: compressor caricato")
+
+    rds_c = storage.load_group("rds_cfg")
+    rds_t = storage.load_group("rds_text")
+    if rds_c or rds_t:
+        with state.lock:
+            if rds_c:
+                for k in ("rt_mode","rt_alt_sec","ps_long","ps_cycle_sec",
+                          "radio_name","icecast_url","icecast_interval_sec"):
+                    if k in rds_c: state.rds_cfg[k] = rds_c[k]
+            if rds_t:
+                if "rt_fixed" in rds_t: state.rds_cfg["rt_fixed"] = rds_t["rt_fixed"]
+                if "rt_alt"   in rds_t: state.rds_cfg["rt_alt"]   = rds_t["rt_alt"]
+        log.info("EEPROM: rds_cfg/rds_text caricati")
+
+    pp = storage.load_group("power_pid")
+    if pp:
+        with state.lock:
+            if "power_target_w" in pp: state.power_target_w = pp["power_target_w"]
+            if "kp" in pp: state.pid.kp = pp["kp"]
+            if "ki" in pp: state.pid.ki = pp["ki"]
+            if "kd" in pp: state.pid.kd = pp["kd"]
+        log.info("EEPROM: power_pid caricato")
 
     # Thread modulatore
     threading.Thread(target=poll_modulatore, daemon=True).start()
     # Thread sensori
     threading.Thread(target=sensor_thread, daemon=True).start()
+    # Thread RDS manager (PS cycling, RT cycling, Icecast)
+    threading.Thread(target=rds_manager_thread, daemon=True).start()
 
     log.info(f"Web server su http://{WEB_HOST}:{WEB_PORT}")
     run(app, host=WEB_HOST, port=WEB_PORT, quiet=True)

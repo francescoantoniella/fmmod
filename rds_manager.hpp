@@ -24,7 +24,10 @@ public:
         set_rds_pi(s.rds_pi_code);
         set_rds_pty(s.rds_pty);
         set_rds_ta(s.rds_ta);
+        set_rds_tp(s.rds_tp);
+        set_rds_ms(s.rds_ms);
         set_rds_af1(s.rds_af1);
+        set_rds_af2(s.rds_af2);
     }
 
     /// Riempie buffer con campioni RDS a 912 kHz (solo LUT, no math in loop). Usare nel thread audio.
