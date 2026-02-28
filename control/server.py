@@ -112,7 +112,7 @@ class State:
             "debug": False, "mute": False,
             "tx_freq": 100.0, "tx_gain": -17.0,
             "ps": "MY_RADIO", "rt": "Benvenuti su Cursor Radio",
-            "pi": "5253", "pty": 2, "ta": 0, "tp": 0, "ms": 1, "af1": 0,
+            "pi": "5253", "pty": 2, "ta": 0, "tp": 0, "ms": 1, "af1": 0, "af2": 0,
             # Compressore
             "comp_en": True, "comp_thr": -18.0, "comp_ratio": 4.0,
             "comp_knee": 6.0, "comp_atk": 5.0, "comp_rel": 150.0,
@@ -242,6 +242,7 @@ def poll_modulatore():
                             elif k == "tp":        m["tp"]         = int(v)
                             elif k == "ms":        m["ms"]         = int(v)
                             elif k == "af1":       m["af1"]        = int(v)
+                            elif k == "af2":       m["af2"]        = int(v)
                             # Compressore parametri
                             elif k == "comp_en":    m["comp_en"]    = v == "1"
                             elif k == "comp_thr":   m["comp_thr"]   = float(v)
@@ -626,7 +627,7 @@ def api_eeprom_save():
             "deemph": p["deemph"], "tx_freq": p["tx_freq"],
             "tx_gain": p["tx_gain"], "mute": p["mute"],
             "pi": p["pi"], "pty": p["pty"], "ta": p["ta"],
-            "tp": p["tp"], "ms": p["ms"], "af1": p["af1"],
+            "tp": p["tp"], "ms": p["ms"], "af1": p["af1"], "af2": p["af2"],
         })
         results["compressor"] = storage.save_group("compressor", {
             "comp_en": p["comp_en"], "comp_thr": p["comp_thr"],
@@ -673,7 +674,7 @@ def api_eeprom_load():
             "vol_mono": "VOL_MONO", "vol_stereo": "VOL_STEREO",
             "preemph": "PREEMPH", "deemph": "DEEMPH",
             "tx_freq": "TX_FREQ", "tx_gain": "TX_GAIN",
-            "pi": "PI", "pty": "PTY", "af1": "AF1", "ta": "TA", "tp": "TP",
+            "pi": "PI", "pty": "PTY", "af1": "AF1", "af2": "AF2", "ta": "TA", "tp": "TP",
         }
         for k, cmd in cmd_map.items():
             if k in tx:
@@ -715,6 +716,12 @@ def api_eeprom_load():
             if rds_t:
                 if "rt_fixed" in rds_t: state.rds_cfg["rt_fixed"] = rds_t["rt_fixed"]
                 if "rt_alt"   in rds_t: state.rds_cfg["rt_alt"]   = rds_t["rt_alt"]
+        # Invia subito il PS al modulatore (senza attendere il ciclo rds_manager_thread)
+        if rds_c and "ps_long" in rds_c:
+            ps1, _ = _ps_halves(rds_c["ps_long"])
+            send_cmd(f"PS={ps1}")
+        if rds_t and "rt_fixed" in rds_t:
+            send_cmd(f"RT={rds_t['rt_fixed']}")
 
     pp = storage.load_group("power_pid")
     if pp:
@@ -872,6 +879,11 @@ if __name__ == "__main__":
             if rds_t:
                 if "rt_fixed" in rds_t: state.rds_cfg["rt_fixed"] = rds_t["rt_fixed"]
                 if "rt_alt"   in rds_t: state.rds_cfg["rt_alt"]   = rds_t["rt_alt"]
+        if rds_c and "ps_long" in rds_c:
+            ps1, _ = _ps_halves(rds_c["ps_long"])
+            send_cmd(f"PS={ps1}")
+        if rds_t and "rt_fixed" in rds_t:
+            send_cmd(f"RT={rds_t['rt_fixed']}")
         log.info("EEPROM: rds_cfg/rds_text caricati")
 
     pp = storage.load_group("power_pid")

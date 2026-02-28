@@ -1080,9 +1080,14 @@ async function sendRawCmd() {
 async function eepromSave() {
   const el = document.getElementById('eeprom-status');
   try {
-    await fetch('/api/eeprom/save', {method:'POST'});
-    el.style.color = 'var(--green)';
-    el.textContent = '✓ Salvato — ' + new Date().toLocaleTimeString();
+    // Prima flusha i valori del form RDS al server, poi salva su EEPROM
+    await saveRdsCfg();
+    const r = await fetch('/api/eeprom/save', {method:'POST'});
+    const d = await r.json();
+    el.style.color = d.ok ? 'var(--green)' : 'var(--yellow)';
+    el.textContent = d.ok
+      ? '✓ Salvato [' + (d.backend||'') + '] — ' + new Date().toLocaleTimeString()
+      : '⚠ Salvataggio parziale: ' + JSON.stringify(d.groups);
   } catch(e) { el.style.color='var(--red)'; el.textContent='Errore: '+e; }
 }
 
