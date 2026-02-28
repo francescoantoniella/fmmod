@@ -1,0 +1,25 @@
+[Unit]
+Description=FM Processor — Web Interface
+# Parte dopo che la rete è up MA non dipende da internet
+After=network.target
+# Parte dopo il modulatore se presente
+After=fmmod.service
+Wants=fmmod.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/fmmod/control
+ExecStart=/usr/bin/python3 /opt/fmmod/control/server.py
+Restart=always
+RestartSec=3
+
+# Log su journald (journalctl -u fmweb -f per seguire)
+StandardOutput=journal
+StandardError=journal
+
+# Variabili ambiente
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

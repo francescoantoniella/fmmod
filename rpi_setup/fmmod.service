@@ -1,0 +1,31 @@
+[Unit]
+Description=FM Processor — Modulatore C++
+After=sound.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/fmmod
+
+# Avvia con ffmpeg che pesca lo stream e lo passa al modulatore
+# Cambia l'URL con la tua sorgente audio
+ExecStart=/bin/bash -c 'ffmpeg -hide_banner -loglevel error \
+  -re -i "http://nr9.newradio.it:9371/stream" \
+  -f s16le -ac 2 -ar 48000 - | \
+  /opt/fmmod/build/modulatore --stdin \
+  --tx-freq=100.0 \
+  --tx-gain=-17'
+
+Restart=always
+RestartSec=5
+
+# Se ffmpeg non trova stream, riprova dopo 5s
+# Priorità real-time per il thread audio
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=50
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
