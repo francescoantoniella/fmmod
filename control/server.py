@@ -902,5 +902,12 @@ if __name__ == "__main__":
     # Thread RDS manager (PS cycling, RT cycling, Icecast)
     threading.Thread(target=rds_manager_thread, daemon=True).start()
 
+    # Avvia la catena webradio all'avvio
+    result = chain.start()
+    if result.get("ok"):
+        log.info("Catena webradio avviata automaticamente")
+    else:
+        log.warning(f"Catena webradio non avviata: {result.get('error')}")
+
     log.info(f"Web server su http://{WEB_HOST}:{WEB_PORT}")
     run(app, host=WEB_HOST, port=WEB_PORT, quiet=True)
