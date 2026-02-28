@@ -111,7 +111,7 @@ class rds_rx(gr.top_block, Qt.QWidget):
                 interpolation=240000,
                 decimation=(samp_rate // decimation),
                 taps=[],
-                fractional_bw=0)
+                fractional_bw=0.4)
         self.qtgui_time_sink_x_0 = qtgui.time_sink_f(
             4096, #size
             48E3, #samp_rate
@@ -256,7 +256,7 @@ class rds_rx(gr.top_block, Qt.QWidget):
         self.freq_xlating_fir_filter_xxx_1_0 = filter.freq_xlating_fir_filter_fcc(10, firdes.low_pass(1.0, samp_rate / decimation, 7.5e3, 5e3), 57e3, (samp_rate / decimation))
         self.fir_filter_xxx_2 = filter.fir_filter_ccc(1, rrc_taps_manchester)
         self.fir_filter_xxx_2.declare_sample_delay(0)
-        self.fir_filter_xxx_1_0 = filter.fir_filter_fff(5, firdes.low_pass(-2.1,240000,15e3,2e3))
+        self.fir_filter_xxx_1_0 = filter.fir_filter_fff(5, firdes.low_pass(-2,240000,15e3,2e3))
         self.fir_filter_xxx_1_0.declare_sample_delay(0)
         self.fir_filter_xxx_1 = filter.fir_filter_fff(5, firdes.low_pass(1.0,240000,15e3,2e3))
         self.fir_filter_xxx_1.declare_sample_delay(0)
