@@ -137,23 +137,21 @@ private:
      *
      * Ritorna il gain da applicare in dB (<=0).
      */
+    // Gain computer — formula Giannoulis (JAES 2012), soft knee standard
+    //   GR = 0                                     se over < -half  (sotto soglia)
+    //   GR = (1/R-1) * (over+half)^2 / (2*knee)   se -half<=over<=half (zona knee)
+    //   GR = over * (1/R - 1)                      se over > half   (sopra soglia)
     static float gain_computer(float in_db, float thr, float ratio, float knee) {
-        float half_knee = knee * 0.5f;
-        float over      = in_db - thr;
+        const float half_knee = knee * 0.5f;
+        const float over      = in_db - thr;
 
         if (over < -half_knee) {
-            // Sotto la soglia (con margine knee): nessuna compressione
             return 0.f;
         } else if (over <= half_knee) {
-            // Nella zona soft knee: interpolazione quadratica
-            float t = (over + half_knee) / knee;   // 0..1
-            float compressed = t * t * (over + half_knee) / (2.f * ratio);
-            float uncompressed = over + half_knee;
-            // Gain = differenza tra segnale compresso e originale (nella zona)
-            return (compressed - uncompressed) / 2.f;
+            const float x = over + half_knee;
+            return (1.f / ratio - 1.f) * x * x / (2.f * knee);
         } else {
-            // Sopra la soglia: compressione piena
-            return (over) * (1.f / ratio - 1.f);
+            return over * (1.f / ratio - 1.f);
         }
     }
 };

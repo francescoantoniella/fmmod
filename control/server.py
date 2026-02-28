@@ -17,6 +17,7 @@ from datetime import datetime
 from collections import deque
 
 from bottle import Bottle, static_file, request, response, run
+from storage import Storage
 
 # ─────────────────────────────────────────────
 # Configurazione
@@ -64,9 +65,8 @@ logging.basicConfig(
 )
 log = logging.getLogger("fmweb")
 
-
 # ─────────────────────────────────────────────
-# PID Controller
+# Stato globale (thread-safe)
 # ─────────────────────────────────────────────
 class PIDController:
     def __init__(self, kp, ki, kd, out_min=0, out_max=4095):
@@ -94,12 +94,15 @@ class PIDController:
         out = self.kp * err + self.ki * self._integral + self.kd * deriv
         return max(self.out_min, min(self.out_max, out))
 
+# ─────────────────────────────────────────────
+# Comunicazione UDP con il modulatore
+# ─────────────────────────────────────────────
+_udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+_udp_sock.settimeout(0.3)
 
-# ─────────────────────────────────────────────
-# Stato globale (thread-safe)
-# ─────────────────────────────────────────────
 class State:
     def __init__(self):
+        self.serial_number: str | None = None
         self.lock = threading.Lock()
 
         # Parametri modulatore (mirror di GlobalSettings)
@@ -166,12 +169,13 @@ class State:
 
 state = State()
 
+# Storage unificato (EEPROM su RPi, JSON altrove)
+storage = Storage(json_path=os.path.expanduser("~/.fmmod/storage.json"))
 
 # ─────────────────────────────────────────────
-# Comunicazione UDP con il modulatore
+# PID Controller
 # ─────────────────────────────────────────────
-_udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-_udp_sock.settimeout(0.3)
+
 
 def send_cmd(cmd: str) -> str | None:
     """Invia comando UDP al modulatore, ritorna risposta se presente."""
@@ -216,6 +220,21 @@ def poll_modulatore():
                             elif k == "pty":       m["pty"]        = int(v)
                             elif k == "ta":        m["ta"]         = int(v)
                             elif k == "af1":       m["af1"]        = int(v)
+                            # Compressore parametri
+                            elif k == "comp_en":    m["comp_en"]    = v == "1"
+                            elif k == "comp_thr":   m["comp_thr"]   = float(v)
+                            elif k == "comp_ratio": m["comp_ratio"] = float(v)
+                            elif k == "comp_knee":  m["comp_knee"]  = float(v)
+                            elif k == "comp_atk":   m["comp_atk"]   = float(v)
+                            elif k == "comp_rel":   m["comp_rel"]   = float(v)
+                            elif k == "comp_mu":    m["comp_mu"]    = float(v)
+                            elif k == "comp_lim":   m["comp_lim"]   = float(v)
+                            # Metering — scritto in state.metering
+                            elif k == "comp_gr":    state.metering["comp_gr_db"]        = float(v)
+                            elif k == "comp_in":    state.metering["comp_input_db"]     = float(v)
+                            elif k == "comp_outpk": state.metering["comp_output_peak"] = float(v)
+                            elif k == "mpx_peak":   state.metering["mpx_peak"]          = float(v)
+                            elif k == "mpx_rms":    state.metering["mpx_rms"]           = float(v)
                         except ValueError:
                             pass
         except Exception as e:
@@ -297,12 +316,43 @@ def write_eeprom(addr: int, data: bytes):
 # ─────────────────────────────────────────────
 # EEPROM settings (load/save)
 # ─────────────────────────────────────────────
-EEPROM_MAGIC = 0xFE01   # versione struttura
+EEPROM_MAGIC    = 0xFE01   # versione struttura settings
+EEPROM_SN_MAGIC = 0xFE02   # versione struttura serializzazione
+SN_EEPROM_OFFSET    = 0x00  # SN @ inizio EEPROM
+SETTINGS_EEPROM_OFFSET = 0x80  # settings JSON dopo il blocco SN
+SN_LOCAL_FILE = "/opt/fmmod/.serial"  # fallback se EEPROM non disponibile
+
+def read_sn() -> str | None:
+    """Legge il numero di serie da EEPROM o file locale."""
+    # Prova EEPROM
+    raw = read_eeprom(SN_EEPROM_OFFSET, 0x14)
+    if len(raw) >= 20:
+        magic = struct.unpack_from(">H", raw, 0)[0]
+        if magic == EEPROM_SN_MAGIC:
+            sn_bytes = raw[2:18]
+            crc_stored = struct.unpack_from(">H", raw, 18)[0]
+            # CRC16 CCITT
+            crc = 0xFFFF
+            for b in sn_bytes:
+                crc ^= b << 8
+                for _ in range(8):
+                    crc = ((crc << 1) ^ 0x1021) if crc & 0x8000 else (crc << 1)
+                    crc &= 0xFFFF
+            if crc == crc_stored:
+                return sn_bytes.rstrip(b'\x00').decode('ascii')
+    # Fallback file locale
+    if os.path.exists(SN_LOCAL_FILE):
+        try:
+            with open(SN_LOCAL_FILE) as f:
+                return f.read().strip()
+        except Exception:
+            pass
+    return None
 
 def eeprom_load() -> dict | None:
-    """Carica settings da EEPROM (o file backup)."""
-    # Prova prima EEPROM hardware
-    raw = read_eeprom(0, 128)
+    """Carica settings da EEPROM offset 0x80 (o file backup)."""
+    # Prova prima EEPROM hardware (offset 0x80)
+    raw = read_eeprom(SETTINGS_EEPROM_OFFSET, 128)
     magic = struct.unpack_from(">H", raw, 0)[0]
     if magic == EEPROM_MAGIC:
         try:
@@ -325,7 +375,7 @@ def eeprom_save(settings: dict):
     js = json.dumps(settings).encode("utf-8")
     raw = struct.pack(">HH", EEPROM_MAGIC, len(js)) + js
     raw += bytes(128 - len(raw)) if len(raw) < 128 else b""
-    write_eeprom(0, raw[:128])
+    write_eeprom(SETTINGS_EEPROM_OFFSET, raw[:128])
     # Backup su file
     with open(EEPROM_FILE, "w") as f:
         json.dump(settings, f, indent=2)
@@ -479,6 +529,8 @@ def api_status():
             "alarms":   dict(state.alarms),
             "softstart": state.softstart_active,
             "power_target_w": state.power_target_w,
+            "serial_number": state.serial_number,
+            "storage_backend": storage.backend_name,
         })
 
 # ── API: invia comando al modulatore ─────────
@@ -511,15 +563,15 @@ def api_eeprom_save():
     with state.lock:
         settings = dict(state.params)
         settings["power_target_w"] = state.power_target_w
-    eeprom_save(settings)
-    return json_resp({"ok": True})
+    ok = storage.save_settings(settings)
+    return json_resp({"ok": ok, "backend": storage.backend_name})
 
 @app.route("/api/eeprom/load", method="POST")
 def api_eeprom_load():
-    s = eeprom_load()
+    s = storage.load_settings()
     if s is None:
-        return json_resp({"ok": False, "error": "nessun dato in EEPROM"})
-    # Applica al modulatore
+        return json_resp({"ok": False, "error": "nessun dato salvato",
+                          "backend": storage.backend_name})
     cmd_map = {
         "gain": "GAIN", "vol_pilot": "VOL_PILOT", "vol_rds": "VOL_RDS",
         "vol_mono": "VOL_MONO", "vol_stereo": "VOL_STEREO",
@@ -537,7 +589,7 @@ def api_eeprom_load():
         state.params.update({k: v for k, v in s.items() if k in state.params})
         if "power_target_w" in s:
             state.power_target_w = s["power_target_w"]
-    return json_resp({"ok": True, "settings": s})
+    return json_resp({"ok": True, "settings": s, "backend": storage.backend_name})
 
 # ── API: soft-start ──────────────────────────
 @app.route("/api/softstart", method="POST")
@@ -578,8 +630,15 @@ def index():
 # Avvio
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    # Carica settings da EEPROM all'avvio
-    saved = eeprom_load()
+    # Leggi numero di serie
+    state.serial_number = storage.read_sn()
+    if state.serial_number:
+        log.info(f"Numero di serie: {state.serial_number}")
+    else:
+        log.warning("Nessun numero di serie trovato in EEPROM")
+
+    # Carica settings da storage all'avvio
+    saved = storage.load_settings()
     if saved:
         log.info("Settings caricati da EEPROM")
         with state.lock:

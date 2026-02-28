@@ -163,7 +163,7 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
   box-shadow:0 0 10px rgba(255,45,85,.2);animation:blink .8s step-end infinite}
 
 /* ── CURVE CANVAS ── */
-.curve-canvas{display:block;width:100%;aspect-ratio:1;background:#060909;border:1px solid var(--border);border-radius:2px;cursor:crosshair}
+.curve-canvas{display:block;width:100%;max-width:340px;aspect-ratio:1;background:#060909;border:1px solid var(--1c2e2e, #1c2e2e);border-radius:2px;cursor:crosshair}
 
 /* ── INPUT TEXT ── */
 .txt-input{
@@ -308,6 +308,7 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
   #tab-comp .grid-3[style*="gap"]{
     grid-template-columns:1fr !important;
   }
+  #tab-comp > .grid-3 { min-height: unset; }
 
   /* ── PID grid ── */
   .pid-grid{grid-template-columns:repeat(3,1fr)}
@@ -498,104 +499,104 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
 
 <!-- ═══════════════════════════════════════════ TAB COMP ═══ -->
 <div class="page" id="tab-comp">
-  <div class="grid-3">
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;align-items:stretch">
 
     <!-- Curva trasferimento -->
-    <div class="panel col-span-2">
+    <div class="panel" style="display:flex;flex-direction:column">
       <div class="panel-hdr">
         <span class="panel-title">Curva di Trasferimento</span>
-        <span style="font-family:var(--mono);font-size:14px;color:var(--text-dim)" id="curve-info"></span>
+        <span style="font-family:var(--mono);font-size:13px;color:var(--text-mid)" id="curve-info"></span>
       </div>
-      <div class="panel-body">
-        <canvas class="curve-canvas" id="curve-canvas"></canvas>
-        <div style="display:flex;gap:14px;margin-top:8px;font-family:var(--mono);font-size:14px;color:var(--text-dim)">
+      <div class="panel-body" style="flex:1;display:flex;flex-direction:column">
+        <canvas class="curve-canvas" id="curve-canvas"
+          style="flex:1;width:100%;max-width:none;aspect-ratio:unset;min-height:380px"></canvas>
+        <div style="display:flex;gap:14px;margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--text-dim)">
           <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:2px;background:var(--blue)"></span>Curva</span>
-          <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:1px;background:rgba(255,255,255,.2);border-top:1px dashed rgba(255,255,255,.2)"></span>1:1</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:1px;border-top:1px dashed rgba(255,255,255,.2)"></span>1:1</span>
           <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>Punto op.</span>
         </div>
       </div>
     </div>
 
-    <!-- Metering compressore -->
-    <div class="panel">
-      <div class="panel-hdr"><span class="panel-title">Metering</span></div>
-      <div class="panel-body" style="display:flex;flex-direction:column;gap:12px">
-        <div class="big-metric">
-          <div class="big-val green" id="gr-big">0.0</div>
-          <div class="big-unit">dB GAIN REDUCTION</div>
-        </div>
-        <div class="vbar-section">
-          <div class="vbar-col">
-            <span class="vbar-col-lbl">INPUT</span>
-            <div class="vbar-track"><div class="vbar-bar g" id="vbar-in" style="height:0%"></div></div>
-            <span class="vbar-num" id="vbar-in-val">−∞</span>
-          </div>
-          <div class="vbar-col">
-            <span class="vbar-col-lbl">GR</span>
-            <div class="vbar-track"><div class="vbar-bar r" id="vbar-gr" style="height:0%"></div></div>
-            <span class="vbar-num" id="vbar-gr-val">—</span>
-          </div>
-          <div class="vbar-col">
-            <span class="vbar-col-lbl">OUT PK</span>
-            <div class="vbar-track"><div class="vbar-bar g" id="vbar-out" style="height:0%"></div></div>
-            <span class="vbar-num" id="vbar-out-val">−∞</span>
-          </div>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-lbl">Enable</span>
-          <label class="toggle"><input type="checkbox" id="tog-comp" checked onchange="toggleAndSend('tog-comp','COMP_EN=')"><span class="tslider"></span></label>
-        </div>
-      </div>
-    </div>
+    <!-- Colonna destra -->
+    <div style="display:flex;flex-direction:column;gap:12px">
 
-    <!-- Controlli compressore -->
-    <div class="panel col-span-3">
-      <div class="panel-hdr"><span class="panel-title">Parametri Compressore</span></div>
-      <div class="panel-body">
-        <div class="grid-3" style="gap:16px 28px">
-          <div class="ctrl-item">
-            <div class="ctrl-lbl">Threshold<span class="ctrl-val" id="lbl-thr">−18.0 dBFS</span></div>
-            <input type="range" id="sl-thr" min="-40" max="0" step="0.5" value="-18"
-                   oninput="onComp('thr',+this.value)">
-            <div class="range-ends"><span>−40</span><span>0 dBFS</span></div>
+      <!-- Metering (nascosto quando i parametri sono aperti) -->
+      <div class="panel" id="comp-metering-panel" style="display:flex;flex-direction:column">
+        <div class="panel-hdr"><span class="panel-title">Metering</span></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:12px">
+          <div class="big-metric">
+            <div class="big-val green" id="gr-big">0.0</div>
+            <div class="big-unit">dB GAIN REDUCTION</div>
           </div>
-          <div class="ctrl-item">
-            <div class="ctrl-lbl">Ratio<span class="ctrl-val" id="lbl-ratio">4.0 : 1</span></div>
-            <input type="range" id="sl-ratio" min="1" max="20" step="0.5" value="4"
-                   oninput="onComp('ratio',+this.value)">
-            <div class="range-ends"><span>1:1</span><span>20:1</span></div>
+          <div class="vbar-section">
+            <div class="vbar-col">
+              <span class="vbar-col-lbl">INPUT</span>
+              <div class="vbar-track"><div class="vbar-bar g" id="vbar-in" style="height:0%"></div></div>
+              <span class="vbar-num" id="vbar-in-val">−∞</span>
+            </div>
+            <div class="vbar-col">
+              <span class="vbar-col-lbl">GR</span>
+              <div class="vbar-track"><div class="vbar-bar r" id="vbar-gr" style="height:0%"></div></div>
+              <span class="vbar-num" id="vbar-gr-val">—</span>
+            </div>
+            <div class="vbar-col">
+              <span class="vbar-col-lbl">OUT PK</span>
+              <div class="vbar-track"><div class="vbar-bar g" id="vbar-out" style="height:0%"></div></div>
+              <span class="vbar-num" id="vbar-out-val">−∞</span>
+            </div>
           </div>
-          <div class="ctrl-item">
-            <div class="ctrl-lbl">Makeup Gain<span class="ctrl-val" id="lbl-mu">+0.0 dB</span></div>
-            <input type="range" id="sl-mu" min="-6" max="18" step="0.5" value="0"
-                   oninput="onComp('mu',+this.value)">
-            <div class="range-ends"><span>−6</span><span>+18 dB</span></div>
-          </div>
-
-          <div class="sep-row col-span-3"><span>Dinamica</span></div>
-
-          <div class="ctrl-item">
-            <div class="ctrl-lbl">Soft Knee<span class="ctrl-val" id="lbl-knee">6.0 dB</span></div>
-            <input type="range" id="sl-knee" min="0" max="12" step="0.5" value="6"
-                   oninput="onComp('knee',+this.value)">
-            <div class="range-ends"><span>Hard</span><span>12 dB</span></div>
-          </div>
-          <div class="ctrl-item">
-            <div class="ctrl-lbl">Attack<span class="ctrl-val" id="lbl-atk">5.0 ms</span></div>
-            <input type="range" id="sl-atk" min="0.5" max="100" step="0.5" value="5"
-                   oninput="onComp('atk',+this.value)">
-            <div class="range-ends"><span>0.5 ms</span><span>100 ms</span></div>
-          </div>
-          <div class="ctrl-item">
-            <div class="ctrl-lbl">Release<span class="ctrl-val" id="lbl-rel">150 ms</span></div>
-            <input type="range" id="sl-rel" min="10" max="2000" step="10" value="150"
-                   oninput="onComp('rel',+this.value)">
-            <div class="range-ends"><span>10 ms</span><span>2 s</span></div>
+          <div class="toggle-row">
+            <span class="toggle-lbl">Enable</span>
+            <label class="toggle"><input type="checkbox" id="tog-comp" checked onchange="toggleAndSend('tog-comp','COMP_EN=')"><span class="tslider"></span></label>
           </div>
         </div>
       </div>
-    </div>
 
+      <!-- Parametri (sostituisce il metering quando aperto) -->
+      <div class="panel" id="comp-params-panel">
+        <div class="panel-hdr" onclick="toggleCompParams()" style="cursor:pointer;user-select:none">
+          <span class="panel-title">Parametri</span>
+          <span id="comp-params-arrow" style="font-size:16px;color:var(--blue);transition:transform .25s">▾</span>
+        </div>
+        <div id="comp-params-body" class="panel-body" style="display:none;overflow-y:auto">
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="ctrl-item">
+              <div class="ctrl-lbl">Threshold<span class="ctrl-val" id="lbl-thr">−18.0 dBFS</span></div>
+              <input type="range" id="sl-thr" min="-40" max="0" step="0.5" value="-18" oninput="onComp('thr',+this.value)">
+              <div class="range-ends"><span>−40</span><span>0 dBFS</span></div>
+            </div>
+            <div class="ctrl-item">
+              <div class="ctrl-lbl">Ratio<span class="ctrl-val" id="lbl-ratio">4.0 : 1</span></div>
+              <input type="range" id="sl-ratio" min="1" max="20" step="0.5" value="4" oninput="onComp('ratio',+this.value)">
+              <div class="range-ends"><span>1:1</span><span>20:1</span></div>
+            </div>
+            <div class="ctrl-item">
+              <div class="ctrl-lbl">Makeup Gain<span class="ctrl-val" id="lbl-mu">+0.0 dB</span></div>
+              <input type="range" id="sl-mu" min="-6" max="18" step="0.5" value="0" oninput="onComp('mu',+this.value)">
+              <div class="range-ends"><span>−6</span><span>+18 dB</span></div>
+            </div>
+            <div class="sep-row"><span>Dinamica</span></div>
+            <div class="ctrl-item">
+              <div class="ctrl-lbl">Soft Knee<span class="ctrl-val" id="lbl-knee">6.0 dB</span></div>
+              <input type="range" id="sl-knee" min="0" max="12" step="0.5" value="6" oninput="onComp('knee',+this.value)">
+              <div class="range-ends"><span>Hard</span><span>12 dB</span></div>
+            </div>
+            <div class="ctrl-item">
+              <div class="ctrl-lbl">Attack<span class="ctrl-val" id="lbl-atk">5.0 ms</span></div>
+              <input type="range" id="sl-atk" min="0.5" max="100" step="0.5" value="5" oninput="onComp('atk',+this.value)">
+              <div class="range-ends"><span>0.5 ms</span><span>100 ms</span></div>
+            </div>
+            <div class="ctrl-item">
+              <div class="ctrl-lbl">Release<span class="ctrl-val" id="lbl-rel">150 ms</span></div>
+              <input type="range" id="sl-rel" min="10" max="2000" step="10" value="150" oninput="onComp('rel',+this.value)">
+              <div class="range-ends"><span>10 ms</span><span>2 s</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- fine colonna destra -->
   </div>
 </div>
 
@@ -789,9 +790,17 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
     <div class="panel">
       <div class="panel-hdr"><span class="panel-title">Informazioni Sistema</span></div>
       <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)">
+          <span class="ctrl-lbl" style="color:var(--blue)">Numero di Serie</span>
+          <span style="font-family:var(--mono);font-size:14px;color:var(--green)" id="sys-sn">—</span>
+        </div>
         <div style="display:flex;justify-content:space-between">
           <span class="ctrl-lbl">Backend</span>
           <span style="font-family:var(--mono);font-size:14px" id="sys-backend">Python Bottle</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="ctrl-lbl">Storage</span>
+          <span style="font-family:var(--mono);font-size:14px" id="sys-storage">—</span>
         </div>
         <div style="display:flex;justify-content:space-between">
           <span class="ctrl-lbl">Modulatore UDP</span>
@@ -972,18 +981,41 @@ function onComp(name, val) {
 // Gain computer (replica C++)
 // ─────────────────────────────────────────────
 function gainComputer(in_db, thr, ratio, knee) {
-  const half = knee * 0.5, over = in_db - thr;
+  // Formula Giannoulis (JAES 2012) — soft knee standard
+  // GR = 0                                       se over < -half  (sotto soglia)
+  // GR = (1/R-1) * (over+half)² / (2*knee)       se -half <= over <= half (zona knee)
+  // GR = over * (1/R - 1)                         se over > half  (sopra soglia)
+  const half = knee * 0.5;
+  const over = in_db - thr;
   if (over < -half) return 0;
   if (over <= half) {
-    const t = (over + half) / knee;
-    return (t*t*(over+half)/(2*ratio) - (over+half)) / 2;
+    const x = over + half;
+    return (1 / ratio - 1) * (x * x) / (2 * knee);
   }
-  return over * (1/ratio - 1);
+  return over * (1 / ratio - 1);
 }
 
 // ─────────────────────────────────────────────
 // Curva di trasferimento
 // ─────────────────────────────────────────────
+function toggleCompParams() {
+  const body     = document.getElementById('comp-params-body');
+  const arrow    = document.getElementById('comp-params-arrow');
+  const metering = document.getElementById('comp-metering-panel');
+  const open     = body.style.display === 'none';
+
+  // Apri parametri → nascondi metering; chiudi → mostra metering
+  body.style.display    = open ? 'block' : 'none';
+  arrow.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+  metering.style.display = open ? 'none' : 'flex';
+
+  setTimeout(drawCurve, 50);
+}
+
+// Storia punto operativo (ultimi N campioni per il trail)
+const _opHistory = [];
+const _OP_HISTORY_MAX = 24;
+
 function drawCurve() {
   const canvas = document.getElementById('curve-canvas');
   const W = canvas.clientWidth, H = canvas.clientHeight;
@@ -992,43 +1024,58 @@ function drawCurve() {
   canvas.height = H * devicePixelRatio;
   const ctx = canvas.getContext('2d');
   ctx.scale(devicePixelRatio, devicePixelRatio);
-  const pad = 34, RANGE = 60;
-  const xOf = db => pad + (db+RANGE)/RANGE*(W-pad*2);
-  const yOf = db => (H-pad) - (db+RANGE)/RANGE*(H-pad*2);
+  const pad = 28, RANGE = 60;
+  const xOf = db => pad + (db+RANGE)/(RANGE)*(W-pad*2);
+  const yOf = db => (H-pad) - (db+RANGE)/(RANGE)*(H-pad*2);
 
-  // Griglia
-  ctx.strokeStyle = 'rgba(255,255,255,.04)';
+  // Sfondo
+  ctx.clearRect(0, 0, W, H);
+
+  // Griglia — più visibile
   ctx.lineWidth = 1;
-  for (let db=-60;db<=0;db+=10) {
+  for (let db=-60;db<=0;db+=12) {
+    ctx.strokeStyle = (db===0||db===-60) ? 'rgba(0,200,240,.12)' : 'rgba(255,255,255,.06)';
     ctx.beginPath();ctx.moveTo(xOf(db),pad);ctx.lineTo(xOf(db),H-pad);ctx.stroke();
     ctx.beginPath();ctx.moveTo(pad,yOf(db));ctx.lineTo(W-pad,yOf(db));ctx.stroke();
   }
+
   // Assi
-  ctx.strokeStyle='rgba(255,255,255,.12)';ctx.lineWidth=1;
+  ctx.strokeStyle='rgba(0,200,240,.25)';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,H-pad);ctx.lineTo(W-pad,H-pad);ctx.stroke();
-  // Labels
-  ctx.fillStyle='#3a5050';ctx.font=`${8}px 'Share Tech Mono',monospace`;
+
+  // Labels — più leggibili
+  ctx.fillStyle='#6a9898';ctx.font=`10px 'Share Tech Mono',monospace`;
   ctx.textAlign='center';ctx.textBaseline='top';
   [-60,-48,-36,-24,-12,0].forEach(db=>ctx.fillText(db,xOf(db),H-pad+3));
   ctx.textAlign='right';ctx.textBaseline='middle';
   [-60,-48,-36,-24,-12,0].forEach(db=>ctx.fillText(db,pad-3,yOf(db)));
 
-  // 1:1
-  ctx.strokeStyle='rgba(255,255,255,.08)';ctx.setLineDash([4,4]);
+  // Label assi
+  ctx.fillStyle='#4a7070';ctx.font=`9px 'Barlow Condensed',sans-serif`;
+  ctx.textAlign='center';
+  ctx.fillText('INPUT dBFS', W/2, H-4);
+  ctx.save();ctx.translate(8,H/2);ctx.rotate(-Math.PI/2);
+  ctx.fillText('OUTPUT dBFS',0,0);ctx.restore();
+
+  // 1:1 reference
+  ctx.strokeStyle='rgba(255,255,255,.10)';ctx.setLineDash([4,6]);ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(xOf(-RANGE),yOf(-RANGE));ctx.lineTo(xOf(0),yOf(0));ctx.stroke();
   ctx.setLineDash([]);
 
   // Knee zone
   const half=P.knee*.5;
-  ctx.fillStyle='rgba(245,196,0,.05)';
+  ctx.fillStyle='rgba(245,196,0,.07)';
   ctx.fillRect(xOf(P.thr-half),pad,xOf(P.thr+half)-xOf(P.thr-half),H-pad*2);
-  ctx.strokeStyle='rgba(245,196,0,.25)';ctx.setLineDash([3,3]);
+  ctx.strokeStyle='rgba(245,196,0,.35)';ctx.setLineDash([3,4]);ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(xOf(P.thr),pad);ctx.lineTo(xOf(P.thr),H-pad);ctx.stroke();
   ctx.setLineDash([]);
 
-  // Curva
-  ctx.strokeStyle='var(--blue)';ctx.lineWidth=2;
-  ctx.shadowColor='rgba(0,200,240,.35)';ctx.shadowBlur=8;
+  // Curva di trasferimento — gradiente colore
+  const grad = ctx.createLinearGradient(xOf(-RANGE),0,xOf(0),0);
+  grad.addColorStop(0,'rgba(0,200,240,.5)');
+  grad.addColorStop(1,'rgba(0,229,170,.9)');
+  ctx.strokeStyle=grad;ctx.lineWidth=2;
+  ctx.shadowColor='rgba(0,200,240,.4)';ctx.shadowBlur=6;
   ctx.beginPath();let first=true;
   for (let in_db=-RANGE;in_db<=0;in_db+=0.5) {
     const out=in_db+gainComputer(in_db,P.thr,P.ratio,P.knee)+P.mu;
@@ -1037,18 +1084,45 @@ function drawCurve() {
   }
   ctx.stroke();ctx.shadowBlur=0;
 
-  // Punto operativo
-  if (compInputDb > -RANGE) {
-    const gr=gainComputer(compInputDb,P.thr,P.ratio,P.knee);
-    const out=compInputDb+gr+P.mu;
-    const ox=xOf(compInputDb),oy=yOf(Math.max(-RANGE,out));
-    ctx.strokeStyle='rgba(255,45,85,.25)';ctx.lineWidth=1;ctx.setLineDash([3,3]);
-    ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(ox,H-pad);
-    ctx.moveTo(ox,oy);ctx.lineTo(pad,oy);ctx.stroke();ctx.setLineDash([]);
-    ctx.fillStyle='var(--red)';ctx.shadowColor='rgba(255,45,85,.5)';ctx.shadowBlur=10;
-    ctx.beginPath();ctx.arc(ox,oy,5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
-    document.getElementById('curve-info').textContent=
-      `in:${compInputDb.toFixed(1)} out:${Math.max(-RANGE,out).toFixed(1)} GR:${gr.toFixed(1)}`;
+  // Punto operativo + trail
+  const gr  = gainComputer(compInputDb,P.thr,P.ratio,P.knee);
+  const out = compInputDb+gr+P.mu;
+  const ox  = xOf(compInputDb), oy = yOf(Math.max(-RANGE,out));
+
+  // Aggiorna storia
+  _opHistory.push({x:ox,y:oy});
+  if (_opHistory.length > _OP_HISTORY_MAX) _opHistory.shift();
+
+  // Trail (sfuma)
+  for (let i=0;i<_opHistory.length-1;i++) {
+    const alpha = (i/_OP_HISTORY_MAX)*0.35;
+    ctx.strokeStyle=`rgba(255,90,90,${alpha})`;
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(_opHistory[i].x,_opHistory[i].y);
+    ctx.lineTo(_opHistory[i+1].x,_opHistory[i+1].y);
+    ctx.stroke();
+  }
+
+  // Crosshair
+  ctx.strokeStyle='rgba(255,80,80,.20)';ctx.lineWidth=1;ctx.setLineDash([2,4]);
+  ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(ox,H-pad);
+  ctx.moveTo(ox,oy);ctx.lineTo(pad,oy);ctx.stroke();ctx.setLineDash([]);
+
+  // Punto
+  const active = compInputDb > P.thr - P.knee;  // sta comprimendo?
+  ctx.fillStyle = active ? '#ff5a5a' : '#00e5aa';
+  ctx.shadowColor = active ? 'rgba(255,80,80,.7)' : 'rgba(0,229,170,.5)';
+  ctx.shadowBlur = active ? 12 : 6;
+  ctx.beginPath();ctx.arc(ox,oy,4,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+
+  // Info testo
+  const infoEl = document.getElementById('curve-info');
+  if (infoEl) {
+    const grDisp = gr < -0.1 ? gr.toFixed(1) : '0.0';
+    infoEl.textContent = `in ${compInputDb.toFixed(1)}  out ${Math.max(-RANGE,out).toFixed(1)}  GR ${grDisp} dB`;
+    infoEl.style.color = active ? '#ff5a5a' : '#6a9898';
   }
 }
 
@@ -1128,6 +1202,18 @@ async function pollStatus() {
     // Connessione OK
     document.getElementById('chip-conn').querySelector('.dot').style.background='var(--green)';
     document.getElementById('sys-lastpoll').textContent = new Date().toLocaleTimeString();
+    if (s.storage_backend) {
+      const el = document.getElementById('sys-storage');
+      el.textContent = s.storage_backend;
+      el.style.color = s.storage_backend === 'EEPROM' ? 'var(--green)' : 'var(--blue)';
+    }
+    if (s.serial_number) {
+      document.getElementById('sys-sn').textContent = s.serial_number;
+      document.getElementById('sys-sn').style.color = 'var(--green)';
+    } else {
+      document.getElementById('sys-sn').textContent = 'NON SERIALIZZATO';
+      document.getElementById('sys-sn').style.color = 'var(--yellow)';
+    }
 
     // Aggiorna uptime
     const up = Math.floor((Date.now()-startTime)/1000);
