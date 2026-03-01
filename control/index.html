@@ -902,7 +902,7 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
     <!-- ═══ CATENA WEBRADIO ═══ -->
     <div class="panel col-span-2">
       <div class="panel-hdr">
-        <span class="panel-title">Catena Webradio</span>
+        <span class="panel-title">Catena Audio</span>
         <span id="chain-status-badge" style="font-size:12px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--border);color:var(--text-mid)">—</span>
       </div>
       <div class="panel-body" style="display:flex;flex-direction:column;gap:14px">
@@ -915,16 +915,69 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
           <span style="color:var(--text-dim);font-size:12px;font-family:var(--mono)" id="chain-uptime"></span>
         </div>
 
-        <!-- URL stream -->
-        <div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
+        <!-- Sorgente audio -->
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center">
+          <span class="ctrl-lbl">Sorgente</span>
+          <select class="txt-input" id="chain-source" onchange="chainSourceChanged()">
+            <option value="webradio">🌐 Webradio (HTTP stream)</option>
+            <option value="alsa1">🎙 Scheda audio 1 (ALSA hw:0,0)</option>
+            <option value="alsa2">🎙 Scheda audio 2 (ALSA hw:1,0)</option>
+            <option value="tone">🎵 Tono di test sinusoidale</option>
+            <option value="mpx_in">📡 MPX esterno da scheda audio 2</option>
+          </select>
+        </div>
+
+        <!-- Campi condizionali per sorgente -->
+
+        <!-- webradio -->
+        <div id="chain-row-url" style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
           <span class="ctrl-lbl">URL Stream</span>
           <input class="txt-input" id="chain-url" type="url"
                  value="http://nr9.newradio.it:9371/stream"
                  placeholder="http://...">
-          <button class="btn" onclick="chainSaveUrl()" style="white-space:nowrap">Salva URL</button>
+          <button class="btn" onclick="chainSaveCfg()" style="white-space:nowrap">Applica</button>
         </div>
 
-        <!-- Flowgraph selezionato -->
+        <!-- alsa1 -->
+        <div id="chain-row-dev1" style="display:none;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
+          <span class="ctrl-lbl">Dispositivo 1</span>
+          <input class="txt-input" id="chain-dev1" type="text" value="hw:0,0" placeholder="hw:0,0">
+          <button class="btn" onclick="chainSaveCfg()" style="white-space:nowrap">Applica</button>
+        </div>
+
+        <!-- alsa2 / mpx_in -->
+        <div id="chain-row-dev2" style="display:none;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
+          <span class="ctrl-lbl" id="chain-dev2-lbl">Dispositivo 2</span>
+          <input class="txt-input" id="chain-dev2" type="text" value="hw:1,0" placeholder="hw:1,0">
+          <button class="btn" onclick="chainSaveCfg()" style="white-space:nowrap">Applica</button>
+        </div>
+
+        <!-- alsa_rate / mpx_rate -->
+        <div id="chain-row-rate" style="display:none;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
+          <span class="ctrl-lbl" id="chain-rate-lbl">Sample rate</span>
+          <input class="txt-input" id="chain-rate" type="number" value="48000" min="8000" max="384000" step="1000" placeholder="Hz">
+          <button class="btn" onclick="chainSaveCfg()" style="white-space:nowrap">Applica</button>
+        </div>
+
+        <!-- tone_freq + amplitude -->
+        <div id="chain-row-tone" style="display:none;flex-direction:column;gap:8px">
+          <div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
+            <span class="ctrl-lbl">Frequenza tono</span>
+            <input class="txt-input" id="chain-tone-freq" type="number" value="1000" min="20" max="20000" step="10" placeholder="Hz">
+            <button class="btn" onclick="chainSaveCfg()" style="white-space:nowrap">Applica</button>
+          </div>
+          <div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center">
+            <span class="ctrl-lbl">Livello tono</span>
+            <input type="range" id="chain-tone-amp" min="0" max="1" step="0.01" value="0.5"
+                   style="accent-color:var(--accent)"
+                   oninput="document.getElementById('chain-tone-amp-val').textContent=
+                     (20*Math.log10(Math.max(+this.value,1e-6))).toFixed(1)+' dBFS'">
+            <span id="chain-tone-amp-val" style="font-family:var(--mono);font-size:12px;color:var(--text-mid);min-width:70px;text-align:right">−6.0 dBFS</span>
+            <button class="btn" onclick="chainSaveCfg()" style="white-space:nowrap">Applica</button>
+          </div>
+        </div>
+
+        <!-- Flowgraph + auto-restart -->
         <div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
           <span class="ctrl-lbl">Flowgraph</span>
           <input class="txt-input" id="chain-flowgraph" type="text"
@@ -932,8 +985,7 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
           <div class="toggle-row" style="margin:0;gap:6px">
             <span class="toggle-lbl tt" data-tip="Riavvio automatico se la catena si ferma">Auto-restart</span>
             <label class="toggle">
-              <input type="checkbox" id="tog-chain-restart"
-                     onchange="chainSaveCfg()">
+              <input type="checkbox" id="tog-chain-restart" onchange="chainSaveCfg()">
               <span class="tslider"></span>
             </label>
           </div>
@@ -1729,6 +1781,43 @@ const CHAIN_STATUS_LABEL = {
 
 let _chainLogLines = [];
 
+function chainUpdateSourceUI(src) {
+  src = src || (document.getElementById('chain-source') || {}).value || 'webradio';
+  const show = id => { const el = document.getElementById(id); if (el) el.style.display = 'grid'; };
+  const hide = id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; };
+  hide('chain-row-url'); hide('chain-row-dev1'); hide('chain-row-dev2');
+  hide('chain-row-rate'); hide('chain-row-tone');
+  if (src === 'webradio') {
+    show('chain-row-url');
+  } else if (src === 'alsa1') {
+    show('chain-row-dev1');
+    const rl = document.getElementById('chain-rate-lbl');
+    if (rl) rl.textContent = 'Sample rate';
+    show('chain-row-rate');
+  } else if (src === 'alsa2') {
+    const dl = document.getElementById('chain-dev2-lbl');
+    if (dl) dl.textContent = 'Dispositivo 2';
+    show('chain-row-dev2');
+    const rl = document.getElementById('chain-rate-lbl');
+    if (rl) rl.textContent = 'Sample rate';
+    show('chain-row-rate');
+  } else if (src === 'tone') {
+    const te = document.getElementById('chain-row-tone');
+    if (te) te.style.display = 'flex';
+  } else if (src === 'mpx_in') {
+    const dl = document.getElementById('chain-dev2-lbl');
+    if (dl) dl.textContent = 'Dispositivo MPX';
+    show('chain-row-dev2');
+    const rl = document.getElementById('chain-rate-lbl');
+    if (rl) rl.textContent = 'Sample rate MPX';
+    show('chain-row-rate');
+  }
+}
+function chainSourceChanged() {
+  chainUpdateSourceUI();
+  chainSaveCfg();
+}
+
 function pollChainStatus() {
   fetch('/api/chain/status')
     .then(r => r.json())
@@ -1752,20 +1841,38 @@ function pollChainStatus() {
           up.textContent = d.error ? `⚠ ${d.error}` : '';
         }
       }
-      // sincronizza cfg → UI (senza sovrascrivere se focus)
-      const urlEl  = document.getElementById('chain-url');
-      const flowEl = document.getElementById('chain-flowgraph');
-      const arEl   = document.getElementById('tog-chain-restart');
       if (d.cfg) {
-        if (urlEl  && document.activeElement !== urlEl)  urlEl.value  = d.cfg.stream_url || '';
-        if (flowEl && document.activeElement !== flowEl) flowEl.value = d.cfg.flowgraph  || '';
-        if (arEl)  arEl.checked = !!d.cfg.auto_restart;
+        const active = el => document.activeElement !== el;
+        const sv = (id, v) => { const el = document.getElementById(id); if (el && active(el) && v != null) el.value = v; };
+        const sc = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+        // selettore sorgente
+        const srcEl = document.getElementById('chain-source');
+        if (srcEl && active(srcEl) && d.cfg.audio_source) {
+          srcEl.value = d.cfg.audio_source;
+          chainUpdateSourceUI(d.cfg.audio_source);
+        }
+        sv('chain-url',       d.cfg.stream_url);
+        sv('chain-dev1',      d.cfg.alsa_dev1);
+        sv('chain-dev2',      d.cfg.alsa_dev2);
+        sv('chain-tone-freq', d.cfg.tone_freq);
+        { const amp = parseFloat(d.cfg.tone_amplitude ?? 0.5);
+          const el = document.getElementById('chain-tone-amp');
+          if (el) { el.value = amp;
+            const lbl = document.getElementById('chain-tone-amp-val');
+            if (lbl) lbl.textContent = (20*Math.log10(Math.max(amp,1e-6))).toFixed(1)+' dBFS'; } }
+        sv('chain-flowgraph', d.cfg.flowgraph);
+        sc('tog-chain-restart', d.cfg.auto_restart);
+        // rate dipende dalla sorgente
+        const src = d.cfg.audio_source;
+        const rEl = document.getElementById('chain-rate');
+        if (rEl && active(rEl)) {
+          if (src === 'mpx_in') rEl.value = d.cfg.mpx_rate ?? 192000;
+          else rEl.value = d.cfg.alsa_rate ?? 48000;
+        }
       }
-      // log
       if (d.log && d.log.length) {
         const logEl = document.getElementById('chain-log');
         if (logEl) {
-          // aggiungi solo le righe nuove
           const newLines = d.log.filter(l => !_chainLogLines.includes(l));
           if (newLines.length) {
             _chainLogLines = d.log;
@@ -1786,28 +1893,31 @@ function chainCmd(cmd) {
     .catch(e => alert('Errore connessione: ' + e));
 }
 
-function chainSaveUrl() {
-  const url = document.getElementById('chain-url').value.trim();
-  if (!url) return;
+function chainSaveCfg() {
+  const src     = (document.getElementById('chain-source')     || {}).value   || 'webradio';
+  const flowEl  = document.getElementById('chain-flowgraph');
+  const arEl    = document.getElementById('tog-chain-restart');
+  const rateEl  = document.getElementById('chain-rate');
+  const rate    = rateEl ? parseInt(rateEl.value) || 48000 : 48000;
+  const body = {
+    audio_source: src,
+    stream_url:   (document.getElementById('chain-url')       || {}).value || undefined,
+    alsa_dev1:    (document.getElementById('chain-dev1')      || {}).value || undefined,
+    alsa_dev2:    (document.getElementById('chain-dev2')      || {}).value || undefined,
+    tone_freq:      parseInt((document.getElementById('chain-tone-freq') || {}).value) || 1000,
+    tone_amplitude: parseFloat((document.getElementById('chain-tone-amp') || {}).value ?? 0.5),
+    flowgraph:    flowEl ? flowEl.value.trim() : undefined,
+    auto_restart: arEl   ? arEl.checked        : false,
+  };
+  if (src === 'mpx_in') body.mpx_rate   = rate;
+  else                   body.alsa_rate  = rate;
   fetch('/api/chain/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ stream_url: url }),
+    body: JSON.stringify(body),
   });
 }
 
-function chainSaveCfg() {
-  const flowEl = document.getElementById('chain-flowgraph');
-  const arEl   = document.getElementById('tog-chain-restart');
-  fetch('/api/chain/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      flowgraph:    flowEl ? flowEl.value.trim() : undefined,
-      auto_restart: arEl   ? arEl.checked        : false,
-    }),
-  });
-}
 
 pollChainStatus();
 </script>

@@ -16,6 +16,7 @@ static void usage(const char* prog) {
         << "  Ingresso:\n"
         << "    --stdin          PCM s16le 48 kHz stereo da stdin (default)\n"
         << "    --udp[=PORT]     PCM da UDP porta PORT (default 9121)\n"
+        << "    --mpx-stdin      MPX float32 mono a 192 kHz da stdin (bypass encoder audio)\n"
         << "\n"
         << "  Uscita:\n"
         << "    --no-pluto       Stdout: MPX raw float32\n"
@@ -51,6 +52,8 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--stdin") == 0) {
             config.input_mode = InputMode::Stdin;
+        } else if (strcmp(argv[i], "--mpx-stdin") == 0) {
+            config.input_mode = InputMode::MpxStdin;
         } else if (strncmp(argv[i], "--udp", 5) == 0) {
             config.input_mode = InputMode::Udp;
             if (argv[i][5] == '=') config.udp_audio_port = atoi(argv[i]+6);

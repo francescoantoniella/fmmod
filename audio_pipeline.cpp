@@ -9,6 +9,9 @@
 #include <cstdio>
 #include <thread>
 #include <vector>
+#ifdef __linux__
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -145,7 +148,63 @@ inline void store_mpx_metering(GlobalSettings& s, const float* mpx, int n) {
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Modalità MPX-stdin: legge float32 mono a 192kHz da stdin,
+// ricampiona a 912kHz (ratio 19:4 esatto) e scrive sull'output FM.
+// Bypass completo di encoder stereo, compressore, RDS locale.
+// ─────────────────────────────────────────────────────────────────────────────
+static void audio_mpx_stdin_loop(GlobalSettings& settings, const Config& config) {
+    PlutoOutput output(config, &settings);
+
+    // Ratio: 912000 / 192000 = 19/4  →  ogni 1920 campioni in → 9120 campioni out
+    constexpr int IN_RATE   = 192000;
+    constexpr int IN_CHUNK  = CHUNK_912K * 4 / 19;  // = 1920
+    static_assert(IN_CHUNK * 19 == CHUNK_912K * 4, "ratio 19:4 non esatto");
+
+    std::vector<float> in_buf(IN_CHUNK);
+    std::vector<float> mpx_out(CHUNK_912K);
+
+    float prev = 0.f;  // ultimo campione del chunk precedente per interpolazione
+
+    while (true) {
+        // Leggi IN_CHUNK float32 da stdin
+        size_t got = 0;
+        const size_t bytes = IN_CHUNK * sizeof(float);
+        while (got < bytes) {
+            ssize_t n = ::read(0,
+                reinterpret_cast<uint8_t*>(in_buf.data()) + got,
+                bytes - got);
+            if (n <= 0) return;  // EOF o errore
+            got += static_cast<size_t>(n);
+        }
+
+        // Ricampionamento lineare 192kHz → 912kHz (19:4)
+        // Per ogni campione output k: fase frazionaria = k * 4/19
+        // indice input = floor(fase), frac = fase - floor(fase)
+        for (int k = 0; k < CHUNK_912K; k++) {
+            // fase in input[0..IN_CHUNK-1], estesa con prev per k vicini a 0
+            // fase_exact = k * (4.0/19.0)
+            // Usiamo interi: num = k*4, den = 19
+            int   idx_num = k * 4;
+            int   idx     = idx_num / 19;
+            float frac    = (idx_num % 19) * (1.f / 19.f);
+            float a = (idx == 0) ? prev : in_buf[idx - 1];
+            float b = (idx < IN_CHUNK) ? in_buf[idx] : in_buf[IN_CHUNK - 1];
+            mpx_out[k] = a + frac * (b - a);
+        }
+        prev = in_buf[IN_CHUNK - 1];
+
+        store_mpx_metering(settings, mpx_out.data(), CHUNK_912K);
+        output.write(mpx_out.data(), CHUNK_912K);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 void audio_processing_thread(GlobalSettings& settings, const Config& config) {
+    if (config.input_mode == InputMode::MpxStdin) {
+        audio_mpx_stdin_loop(settings, config);
+        return;
+    }
+
     RDSManager        rds;
     MpxModulator      mpx_mod;
     AudioInput        input(config);

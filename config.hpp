@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-enum class InputMode { Stdin, Udp };
+enum class InputMode { Stdin, Udp, MpxStdin };
 
 struct Config {
     InputMode input_mode = InputMode::Stdin;
