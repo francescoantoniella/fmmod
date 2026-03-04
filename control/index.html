@@ -374,20 +374,30 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
 <div class="page active" id="tab-tx">
   <div class="grid-3">
 
-    <!-- Metering MPX -->
+    <!-- Output FM -->
     <div class="panel">
-      <div class="panel-hdr"><span class="panel-title">MPX Output</span></div>
+      <div class="panel-hdr"><span class="panel-title">Output</span></div>
       <div class="panel-body">
         <div class="big-metric">
-          <div class="big-val green" id="mpx-peak-val">0.00</div>
-          <div class="big-unit">MPX PEAK</div>
+          <div class="big-val green" id="mpx-peak-val">0.0</div>
+          <div class="big-unit">kHz PEAK</div>
         </div>
         <div style="margin-top:10px">
-          <div class="ctrl-lbl">Peak<span id="mpx-peak-num">0.000</span></div>
+          <div class="ctrl-lbl">Peak<span id="mpx-peak-num">0.0 kHz</span></div>
           <div class="vu-wrap" style="margin-top:4px"><div class="vu-fill green" id="bar-mpx-peak" style="width:0%"></div></div>
-          <div class="vu-label"><span>0.0</span><span>0.5</span><span>1.0</span></div>
-          <div class="ctrl-lbl" style="margin-top:8px">RMS<span id="mpx-rms-num">0.000</span></div>
-          <div class="vu-wrap" style="margin-top:4px"><div class="vu-fill green" id="bar-mpx-rms" style="width:0%"></div></div>
+          <div class="vu-label"><span>0</span><span>37.5</span><span>75 kHz</span></div>
+        </div>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:5px">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid);letter-spacing:2px;margin-bottom:2px">COMPONENTI</div>
+          <div class="ctrl-lbl">Mono<span id="out-mono-num">— kHz</span></div>
+          <div class="vu-wrap"><div class="vu-fill green" id="bar-out-mono" style="width:0%"></div></div>
+          <div class="ctrl-lbl" style="margin-top:4px">Pilot 19kHz<span id="out-pilot-num">— kHz</span></div>
+          <div class="vu-wrap"><div class="vu-fill" id="bar-out-pilot" style="width:0%;background:linear-gradient(to right,#003344,var(--blue))"></div></div>
+          <div class="ctrl-lbl" style="margin-top:4px">Stereo 38kHz<span id="out-stereo-num">— kHz</span></div>
+          <div class="vu-wrap"><div class="vu-fill" id="bar-out-stereo" style="width:0%;background:linear-gradient(to right,#003344,var(--blue))"></div></div>
+          <div class="ctrl-lbl" style="margin-top:4px">RDS 57kHz<span id="out-rds-num">— kHz</span></div>
+          <div class="vu-wrap"><div class="vu-fill" id="bar-out-rds" style="width:0%;background:linear-gradient(to right,#1a0033,var(--purple))"></div></div>
+          <div class="vu-label"><span>0</span><span>37.5</span><span>75 kHz</span></div>
         </div>
       </div>
     </div>
@@ -426,17 +436,26 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
           <div class="range-ends"><span>−24</span><span>+24 dB</span></div>
         </div>
         <div class="ctrl-item">
-          <div class="ctrl-lbl">Pilot 19kHz<span class="ctrl-val" id="lbl-pilot">0.09</span></div>
+          <div class="ctrl-lbl" style="display:flex;align-items:center;gap:8px">
+            <button id="btn-pilot" class="btn primary" style="padding:2px 8px;font-size:10px" onclick="toggleMpx('pilot')">PILOT</button>
+            <span style="flex:1">19 kHz</span><span class="ctrl-val" id="lbl-pilot">6.75 kHz</span>
+          </div>
           <input type="range" id="sl-pilot" min="0.05" max="0.15" step="0.005" value="0.09"
                  oninput="onTxParam('pilot',+this.value)">
         </div>
         <div class="ctrl-item">
-          <div class="ctrl-lbl">Stereo (L−R)<span class="ctrl-val" id="lbl-stereo">0.44</span></div>
+          <div class="ctrl-lbl" style="display:flex;align-items:center;gap:8px">
+            <button id="btn-stereo" class="btn primary" style="padding:2px 8px;font-size:10px" onclick="toggleMpx('stereo')">STEREO</button>
+            <span style="flex:1">L−R 38 kHz</span><span class="ctrl-val" id="lbl-stereo">33.0 kHz</span>
+          </div>
           <input type="range" id="sl-stereo" min="0.1" max="0.6" step="0.01" value="0.44"
                  oninput="onTxParam('stereo',+this.value)">
         </div>
         <div class="ctrl-item">
-          <div class="ctrl-lbl">RDS 57kHz<span class="ctrl-val" id="lbl-rds">0.03</span></div>
+          <div class="ctrl-lbl" style="display:flex;align-items:center;gap:8px">
+            <button id="btn-rds" class="btn primary" style="padding:2px 8px;font-size:10px" onclick="toggleMpx('rds')">RDS</button>
+            <span style="flex:1">57 kHz</span><span class="ctrl-val" id="lbl-rds">2.25 kHz</span>
+          </div>
           <input type="range" id="sl-rds" min="0.01" max="0.08" step="0.005" value="0.03"
                  oninput="onTxParam('rds',+this.value)">
         </div>
@@ -1186,9 +1205,9 @@ function onTxParam(name, val) {
     txfreq: ['lbl-txfreq', v=>v.toFixed(1)+' MHz', v=>'TX_FREQ='+v],
     txgain: ['lbl-txgain', v=>(v>=0?'+':'')+v.toFixed(0)+' dB', v=>'TX_GAIN='+v],
     gain:   ['lbl-gain',   v=>(v>=0?'+':'')+v.toFixed(1)+' dB', v=>'GAIN='+v],
-    pilot:  ['lbl-pilot',  v=>v.toFixed(3), v=>'VOL_PILOT='+v],
-    stereo: ['lbl-stereo', v=>v.toFixed(2), v=>'VOL_STEREO='+v],
-    rds:    ['lbl-rds',    v=>v.toFixed(3), v=>'VOL_RDS='+v],
+    pilot:  ['lbl-pilot',  v=>(v*75).toFixed(1)+' kHz', v=>'VOL_PILOT='+v],
+    stereo: ['lbl-stereo', v=>(v*75).toFixed(1)+' kHz', v=>'VOL_STEREO='+v],
+    rds:    ['lbl-rds',    v=>(v*75).toFixed(1)+' kHz', v=>'VOL_RDS='+v],
     preemph:['lbl-preemph',v=>v<=0?'OFF':v+' µs', v=>'PREEMPH='+v],
     deemph: ['lbl-deemph', v=>v<=0?'OFF':v+' µs', v=>'DEEMPH='+v],
   };
@@ -1465,9 +1484,9 @@ async function pollStatus() {
     syncSlider('sl-txfreq','lbl-txfreq', p.tx_freq, v=>v?.toFixed(1)+' MHz');
     syncSlider('sl-txgain','lbl-txgain', p.tx_gain, v=>(v>=0?'+':'')+v?.toFixed(0)+' dB');
     syncSlider('sl-gain',  'lbl-gain',   p.gain,    v=>(v>=0?'+':'')+v?.toFixed(1)+' dB');
-    syncSlider('sl-pilot', 'lbl-pilot',  p.vol_pilot, v=>v?.toFixed(3));
-    syncSlider('sl-stereo','lbl-stereo', p.vol_stereo, v=>v?.toFixed(2));
-    syncSlider('sl-rds',   'lbl-rds',    p.vol_rds,  v=>v?.toFixed(3));
+    syncSlider('sl-pilot', 'lbl-pilot',  p.vol_pilot, v=>(v*75).toFixed(1)+' kHz');
+    syncSlider('sl-stereo','lbl-stereo', p.vol_stereo, v=>(v*75).toFixed(1)+' kHz');
+    syncSlider('sl-rds',   'lbl-rds',    p.vol_rds,  v=>(v*75).toFixed(1)+' kHz');
 
     if (p.tx_freq != null) {
       P.txfreq = p.tx_freq;
@@ -1515,15 +1534,32 @@ async function pollStatus() {
     document.getElementById('vbar-gr-val').textContent  = grAbs<0.1?'—':'−'+grAbs.toFixed(1)+' dB';
     document.getElementById('vbar-out-val').textContent = compOutPeak>-60?compOutPeak.toFixed(1)+' dB':'−∞';
 
-    // MPX
+    // Output FM — peak totale in kHz
     const mpxPeak = m.mpx_peak ?? 0;
-    const mpxRms  = m.mpx_rms  ?? 0;
-    document.getElementById('mpx-peak-val').textContent = mpxPeak.toFixed(2);
+    const peakKhz = mpxPeak * 75;
+    document.getElementById('mpx-peak-val').textContent = peakKhz.toFixed(1);
     document.getElementById('mpx-peak-val').className = 'big-val '+(mpxPeak<0.8?'green':mpxPeak<0.95?'yellow':'red');
-    document.getElementById('mpx-peak-num').textContent = mpxPeak.toFixed(3);
-    document.getElementById('mpx-rms-num').textContent  = mpxRms.toFixed(3);
+    document.getElementById('mpx-peak-num').textContent = peakKhz.toFixed(1)+' kHz';
     document.getElementById('bar-mpx-peak').style.width = Math.min(100, mpxPeak*100)+'%';
-    document.getElementById('bar-mpx-rms').style.width  = Math.min(100, mpxRms*100)+'%';
+    // Componenti: mono e stereo dinamici dal modulatore, pilot e RDS statici dai vol_*
+    const vMono   = p.vol_mono   ?? 0;
+    const vPilot  = p.vol_pilot  ?? 0;
+    const vStereo = p.vol_stereo ?? 0;
+    const vRds    = p.vol_rds    ?? 0;
+    const monoPeak   = m.mono_peak   ?? 0;
+    const stereoPeak = m.stereo_peak ?? 0;
+    // Mono e stereo: peak audio × vol, espresso in kHz di deviazione
+    const monoKhz   = monoPeak   * vMono   * 75;
+    const stereoKhz = stereoPeak * vStereo * 75;
+    const fmt = v => v.toFixed(1)+' kHz';
+    document.getElementById('out-mono-num').textContent   = fmt(monoKhz);
+    document.getElementById('out-pilot-num').textContent  = fmt(vPilot  * 75);
+    document.getElementById('out-stereo-num').textContent = fmt(stereoKhz);
+    document.getElementById('out-rds-num').textContent    = fmt(vRds    * 75);
+    document.getElementById('bar-out-mono').style.width   = Math.min(100, monoPeak   * vMono   * 100)+'%';
+    document.getElementById('bar-out-pilot').style.width  = Math.min(100, vPilot  * 100)+'%';
+    document.getElementById('bar-out-stereo').style.width = Math.min(100, stereoPeak * vStereo * 100)+'%';
+    document.getElementById('bar-out-rds').style.width    = Math.min(100, vRds    * 100)+'%';
 
     // ── Sensori ──
     const sens = s.sensors || {};
@@ -1920,6 +1956,30 @@ function chainSaveCfg() {
 
 
 pollChainStatus();
+// ── Toggle PILOT / STEREO / RDS ──────────────────────────────────────────────
+const _mpxSaved  = { pilot:0.09, stereo:0.44, rds:0.03 };
+const _mpxActive = { pilot:true, stereo:true,  rds:true  };
+
+function toggleMpx(name) {
+  const nowOn = !_mpxActive[name];
+  _mpxActive[name] = nowOn;
+  const btn = document.getElementById('btn-' + name);
+  const sl  = document.getElementById('sl-'  + name);
+  if (nowOn) {
+    btn.classList.replace('danger','primary');
+    sl.disabled = false; sl.style.opacity = '';
+    const v = _mpxSaved[name];
+    sl.value = v;
+    onTxParam(name, v);
+  } else {
+    _mpxSaved[name] = parseFloat(sl.value) || _mpxSaved[name];
+    btn.classList.replace('primary','danger');
+    sl.disabled = true; sl.style.opacity = '0.3';
+    document.getElementById('lbl-' + name).textContent = '0.0 kHz';
+    sendCmd({ pilot:'VOL_PILOT=0', stereo:'VOL_STEREO=0', rds:'VOL_RDS=0' }[name]);
+  }
+}
+
 </script>
 </body>
 </html>

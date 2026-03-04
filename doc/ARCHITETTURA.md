@@ -99,7 +99,7 @@ Browser (index.html)
 | `audio_pipeline.cpp/.hpp` | Thread audio: lettura → DSP → upsampling → MPX → output |
 | `audio_input.cpp/.hpp` | Lettura PCM da stdin o UDP:9121 |
 | `compressor.hpp` | SingleBandCompressor (soglia, ratio, knee, att/rel, makeup, limiter) |
-| `mpx_modulator.hpp` | Generazione segnale MPX a 912 kHz con LUT sin |
+| `mpx_modulator.hpp` | Generazione segnale MPX a 912 kHz con LUT sin; bypass condizionale per vol=0 su pilot/stereo/RDS |
 | `fm_modulator.hpp` | Modulazione FM → IQ int16 |
 | `upsampler.hpp` | Polyphase upsampler 48 k→ 912 k (fattore 19) |
 | `pluto_output.cpp/.hpp` | Uscita verso PlutoSDR (libiio) o stdout |
@@ -150,6 +150,16 @@ Chunk 480 campioni @ 48 kHz (10 ms)
 | `control/index.html` | UI single-page servita da Bottle |
 | `control/fonts/` | Font woff2 locali (offline, nessuna richiesta CDN) |
 
+### Driver periferiche I2C/SPI (`drivers/`)
+
+| Directory | Chip | Bus | Classe | Uso |
+|-----------|------|-----|--------|-----|
+| `drivers/ADS7066/` | ADS7066 | SPI | `ADS7066` | ADC 8 canali 16-bit |
+| `drivers/DAC121/` | DAC121 | I2C | `DAC121` | DAC 12-bit, uscita tensione |
+| `drivers/EEPROM/` | M24512 / AT24C512 | I2C | `N24512` | EEPROM 512kbit, R/W byte/pagina/blocco |
+| `drivers/PCA9534/` | TCA9534 / PCA9534 | I2C | `TCA9534` | GPIO expander 8-bit |
+| `drivers/TLV320ADC6140/` | TLV320ADC6140 | I2C + I2S | `TLV320ADC` | Audio ADC 4ch, master I2S, 48–384 kHz |
+
 ### Thread in esecuzione
 
 | Thread | Funzione | Intervallo |
@@ -185,11 +195,25 @@ Applicazione single-page. **Nessuna dipendenza esterna a runtime** (font serviti
 
 | Tab | Contenuto |
 |-----|-----------|
-| TX / RDS | Frequenza, gain, volumi MPX, enfasi, MUTE, pannello RDS avanzato |
+| TX / RDS | Frequenza, gain, volumi MPX in kHz, toggle pilot/stereo/RDS, enfasi, MUTE, pannello RDS avanzato |
 | Compressore | Curva di trasferimento, parametri, metering GR/in/out |
 | Potenza / RF | Temperatura, FWD/REF/SWR, DAC, PID, Soft-start, allarmi |
 | Storico | Grafici canvas: temp, FWD, SWR, GR compressore (ultimi 10 min) |
 | Sistema | Serial number, backend storage, uptime, Save/Load EEPROM |
+
+### Pannello Output FM (tab TX)
+
+Il pannello "Output" mostra la deviazione FM peak/rms in kHz (scala: valore normalizzato × 75 kHz).
+Visualizza separatamente la deviazione nominale di ogni componente MPX:
+
+| Componente | Frequenza sottoportante | Calcolo deviazione nominale |
+|-----------|------------------------|----------------------------|
+| Mono (L+R) | — | `vol_mono × 75 kHz` |
+| Pilot | 19 kHz | `vol_pilot × 75 kHz` |
+| Stereo (L-R) | 38 kHz DSB-SC | `vol_stereo × 75 kHz` |
+| RDS | 57 kHz | `vol_rds × 75 kHz` |
+
+I pulsanti **PILOT**, **STEREO**, **RDS** nel pannello di controllo permettono di attivare/disattivare le rispettive sottoportanti a runtime. Il valore del cursore viene salvato e ripristinato al re-enable. Inviano `VOL_PILOT=0`, `VOL_STEREO=0`, `VOL_RDS=0` al modulatore tramite UDP.
 
 ### Pannello RDS avanzato
 
@@ -325,8 +349,13 @@ curl -X POST http://localhost:8080/api/rds/config \
 Raspberry Pi / CM4
   GPIO2 (SDA) ──┬──► ADS1115  0x48  (ADDR → GND)
                 ├──► MCP4725  0x60  (A0/A1 → GND)
-                └──► AT24C512 0x50  (A0/A1/A2 → GND, WP → GND)
+                ├──► AT24C512 0x50  (A0/A1/A2 → GND, WP → GND)
+                ├──► DAC121   0x0D  (12-bit DAC I2C)
+                ├──► TCA9534  0x20  (8-bit GPIO expander)
+                └──► TLV320ADC6140 0x4C (audio ADC 4ch I2S master)
   GPIO3 (SCL) ──┴── (tutte le periferiche)
+
+  SPI0 ─────────► ADS7066  CE0/CE1  (8-ch ADC 16-bit SPI)
 ```
 
 ### ADS1115 — ADC 4 canali 16-bit
@@ -353,6 +382,114 @@ WP   → GND  (write enable)
 A0/A1/A2 → GND  (indirizzo 0x50)
 VCC  → 3.3 V
 ```
+
+### ADS7066 — ADC 8 canali 16-bit (SPI)
+
+Driver: `drivers/ADS7066/ads7066.py`
+
+ADC SPI a 16 bit con 8 ingressi analogici multiplexati. Operato in modalità auto-sequenza o manuale.
+
+| Pin ADS7066 | GPIO Raspberry Pi |
+|-------------|-------------------|
+| SCLK | GPIO11 (SPI0 SCLK) |
+| DIN (MOSI) | GPIO10 (SPI0 MOSI) |
+| DOUT (MISO) | GPIO9 (SPI0 MISO) |
+| CS | GPIO8 (SPI0 CE0) o GPIO7 (CE1) |
+| VDD/AVDD | 3.3 V o 5 V |
+
+```python
+from ads7066 import ADS7066
+adc = ADS7066(bus=0, device=0, vref=5.0)
+voltage = adc.get_voltage(channel=0)          # lettura canale singolo
+voltage, ch = adc.get_voltage_auto()          # lettura auto-sequenza
+```
+
+Script di test completo: `drivers/ADS7066/test_ads7066.py`
+Supporta acquisizione multipla, visualizzazione matplotlib, export CSV.
+
+### DAC121 — DAC 12-bit I2C
+
+Driver: `drivers/DAC121/dac121.py`
+
+DAC 12-bit con uscita singola e modalità di power-down configurabile.
+Indirizzo I2C di default: `0x0D` (configurabile via pin).
+
+```python
+from dac121 import DAC121
+dac = DAC121(bus_number=1, address=0x0D, vref=5.0)
+dac.set_voltage(2.5)
+v = dac.get_voltage()
+```
+
+Modalità power-down: `MODE_NORMAL`, `MODE_2_5K_GND`, `MODE_100K_GND`, `MODE_HIGH_IMP`.
+
+### M24512 / AT24C512 — EEPROM generica I2C
+
+Driver: `drivers/EEPROM/m24512.py` (classe `N24512`)
+
+Compatibile con AT24C512 e M24512. Pagine da 128 B, indirizzo 16-bit.
+Scrittura in blocchi max 31 byte (limite buffer I2C Linux). Pausa 5 ms per ciclo write interno.
+
+```python
+from m24512 import N24512
+eeprom = N24512(bus_number=1, address=0x50)
+eeprom.write_byte(0x0100, 0xAA)
+val = eeprom.read_byte(0x0100)
+eeprom.write_page(0x0200, [0x01, 0x02, 0x03])
+block = eeprom.read_block(0x0200, 10)
+```
+
+Nota: il driver di produzione per la persistenza dei parametri è `control/storage.py` (usa `smbus2` direttamente). `drivers/EEPROM/m24512.py` è il driver standalone di basso livello.
+
+### TCA9534 — GPIO expander 8-bit I2C
+
+Driver: `drivers/PCA9534/pca9534.py` (classe `TCA9534`, compatibile PCA9534/TCA9534)
+
+Espansore I/O a 8 pin su I2C. Indirizzo di default `0x20` (A0/A1/A2 → GND).
+
+```python
+from pca9534 import TCA9534
+gpio = TCA9534(bus_number=1, address=0x20)
+gpio.set_gpio_mode(0, 0)    # pin 0 → OUTPUT
+gpio.set_gpio(0, True)      # pin 0 → HIGH
+state = gpio.get_gpio(1)    # legge pin 1
+gpio.set_gpio_invert(1, True)  # polarità invertita
+```
+
+### TLV320ADC6140 — Audio ADC 4 canali I2S
+
+Driver: `drivers/TLV320ADC6140/TLV320ADC.py` (classe `TLV320ADC`)
+
+ADC audio professionale a 4 canali (fino a 8 canali PDM), master I2S/TDM, sample rate fino a 384 kHz.
+Richiede MCLK 24.576 MHz su GPIO1 (configurato come input MCLK via registro `ADCX140_GPIO_CFG0`).
+Pin standby/shutdown: GPIO4 (BCM), attivo alto.
+
+| Parametro | Valore |
+|-----------|--------|
+| Indirizzo I2C | 0x4C |
+| Sample rate supportati | 48 / 96 / 192 / 384 kHz |
+| Canali | 4 (ingressi MIC/LINE diff/single) |
+| Gain analogico | 0–42 dB (step 0.25 dB) |
+| Gain digitale | -100–+27 dB (step 0.5 dB) |
+| Output | I2S, Left Justified, TDM (word length 16/20/24/32 bit) |
+
+```python
+from TLV320ADC import TLV320ADC
+adc = TLV320ADC(i2c_address=0x4C)
+adc.set_wake()
+adc.set_power_config()
+adc.set_communication(samplerate=48)
+adc.set_output_type(protocol="I2S", word_length=32, compatibility=True)
+adc.set_input(channel=1, in_type="LINE", config="DIFF", coupling="AC", impedance=2.5)
+adc.set_analog_gain(1, analog_gain_db=20)
+adc.set_input_power([1, 2], power="ON", enable=True)
+adc.set_adc_power(mic_bias="OFF", vref_volt=2.75)
+adc.set_digital_gain(channel=1, digital_gain_db=0.0)
+```
+
+Script di test: `drivers/TLV320ADC6140/test_192khz.py` (192 kHz, LINE, SINGLE, DC)
+e `drivers/TLV320ADC6140/test_384khz.py` (384 kHz).
+Riferimento: `drivers/TLV320ADC6140/sbaa382.pdf` (SBAA382, TI application note — configurazione I2S master).
 
 ### Rilevatore di potenza (AD8307)
 
