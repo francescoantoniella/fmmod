@@ -176,7 +176,29 @@ void control_udp_thread(GlobalSettings& settings) {
         // ── Gain / Mute / Debug ───────────────────────────────────────────────
         } else if (startsWith("GAIN=", 5)) {
             float db = std::strtof(msg.c_str()+5, nullptr);
-            if (db>=-24.f&&db<=24.f) { settings.input_gain_db.store(db); std::cerr<<"GAIN="<<db<<" dB\n"; }
+            if (db>=-24.f&&db<=24.f) {
+                settings.input_gain_db.store(db);
+                settings.gain_l_db.store(db);
+                settings.gain_r_db.store(db);
+                std::cerr<<"GAIN="<<db<<" dB\n";
+            }
+
+        } else if (startsWith("GAIN_L=", 7)) {
+            float db = std::strtof(msg.c_str()+7, nullptr);
+            if (db>=-24.f&&db<=24.f) { settings.gain_l_db.store(db); std::cerr<<"GAIN_L="<<db<<"\n"; }
+
+        } else if (startsWith("GAIN_R=", 7)) {
+            float db = std::strtof(msg.c_str()+7, nullptr);
+            if (db>=-24.f&&db<=24.f) { settings.gain_r_db.store(db); std::cerr<<"GAIN_R="<<db<<"\n"; }
+
+        } else if (startsWith("GAINS_LINKED=", 13)) {
+            bool on = msg.size()>13 && (msg[13]=='1'||msg.substr(13).find("true")==0||msg.substr(13).find("on")==0);
+            settings.gains_linked.store(on);
+            std::cerr<<"GAINS_LINKED="<<(on?"1":"0")<<"\n";
+
+        } else if (startsWith("MONO_MODE=", 10)) {
+            int m = std::atoi(msg.c_str()+10);
+            if (m>=0&&m<=3) { settings.mono_mode.store(m); std::cerr<<"MONO_MODE="<<m<<"\n"; }
 
         } else if (startsWith("MUTE=", 5)) {
             bool on = msg.size()>5 && (msg[5]=='1'||
@@ -256,7 +278,11 @@ void control_udp_thread(GlobalSettings& settings) {
         } else if (msg == "GET" || msg == "STATUS") {
             std::ostringstream out;
             // Audio
-            out << "GAIN="       << settings.input_gain_db.load()   << "\n";
+            out << "GAIN="         << settings.input_gain_db.load()   << "\n";
+            out << "GAIN_L="       << settings.gain_l_db.load()       << "\n";
+            out << "GAIN_R="       << settings.gain_r_db.load()       << "\n";
+            out << "GAINS_LINKED=" << (settings.gains_linked.load()?"1":"0") << "\n";
+            out << "MONO_MODE="    << settings.mono_mode.load()       << "\n";
             out << "MUTE="       << (settings.mute.load()?"1":"0")  << "\n";
             out << "DEBUG="      << (settings.debug.load()?"1":"0") << "\n";
             // Livelli
@@ -284,8 +310,10 @@ void control_udp_thread(GlobalSettings& settings) {
             out << "COMP_IN="    << settings.comp_input_rms_db.load()     << "\n";
             out << "COMP_OUTPK=" << settings.comp_output_peak_db.load()   << "\n";
             // MPX metering
-            out << "MPX_PEAK="   << settings.mpx_peak.load()              << "\n";
-            out << "MPX_RMS="    << settings.mpx_rms.load()               << "\n";
+            out << "MPX_PEAK="    << settings.mpx_peak.load()              << "\n";
+            out << "MPX_RMS="     << settings.mpx_rms.load()               << "\n";
+            out << "MONO_PEAK="   << settings.mono_peak.load()             << "\n";
+            out << "STEREO_PEAK=" << settings.stereo_peak.load()           << "\n";
             // RDS
             {
                 std::lock_guard<std::mutex> lk(settings.rds_mutex);

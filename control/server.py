@@ -108,6 +108,7 @@ class State:
         self.params = {
             "gain": 0.0, "vol_pilot": 0.09, "vol_rds": 0.03,
             "vol_mono": 0.44, "vol_stereo": 0.44,
+            "gain_l": 0.0, "gain_r": 0.0, "gains_linked": True, "mono_mode": 0,
             "preemph": 0.0, "deemph": 0.0,
             "debug": False, "mute": False,
             "tx_freq": 100.0, "tx_gain": -17.0,
@@ -126,6 +127,8 @@ class State:
             "comp_output_peak": -40.0,
             "mpx_peak": 0.0,
             "mpx_rms": 0.0,
+            "mono_peak": 0.0,
+            "stereo_peak": 0.0,
         }
 
         # Sensori hardware
@@ -223,7 +226,11 @@ def poll_modulatore():
                         v = v.strip()
                         m = state.params
                         try:
-                            if k == "gain":        m["gain"]       = float(v)
+                            if k == "gain":        m["gain"]         = float(v)
+                            elif k == "gain_l":    m["gain_l"]       = float(v)
+                            elif k == "gain_r":    m["gain_r"]       = float(v)
+                            elif k == "gains_linked": m["gains_linked"] = v == "1"
+                            elif k == "mono_mode": m["mono_mode"]    = int(v)
                             elif k == "vol_pilot": m["vol_pilot"]  = float(v)
                             elif k == "vol_rds":   m["vol_rds"]    = float(v)
                             elif k == "vol_mono":  m["vol_mono"]   = float(v)
@@ -258,6 +265,8 @@ def poll_modulatore():
                             elif k == "comp_outpk": state.metering["comp_output_peak"] = float(v)
                             elif k == "mpx_peak":   state.metering["mpx_peak"]          = float(v)
                             elif k == "mpx_rms":    state.metering["mpx_rms"]           = float(v)
+                            elif k == "mono_peak":  state.metering["mono_peak"]         = float(v)
+                            elif k == "stereo_peak":state.metering["stereo_peak"]       = float(v)
                         except ValueError:
                             pass
         except Exception as e:
@@ -378,13 +387,14 @@ def sensor_thread():
                 "fwd_high":  fwd_w  > ALARM_FWD_MAX,
             }
 
-            # Se allarme attivo: riduci TX gain progressivamente
-            if any(alarms.values()):
-                with state.lock:
-                    cur_gain = state.params.get("tx_gain", -17.0)
-                new_gain = max(-40.0, cur_gain - 1.0)
-                send_cmd(f"TX_GAIN={new_gain:.1f}")
-                log.warning(f"ALLARME: {[k for k,v in alarms.items() if v]} → TX_GAIN={new_gain:.1f}")
+            # Se allarme attivo: riduzione automatica TX gain SOSPESA
+            # (riabilitare quando i sensori sono calibrati con valori reali)
+            # if any(alarms.values()):
+            #     with state.lock:
+            #         cur_gain = state.params.get("tx_gain", -17.0)
+            #     new_gain = max(-40.0, cur_gain - 1.0)
+            #     send_cmd(f"TX_GAIN={new_gain:.1f}")
+            #     log.warning(f"ALLARME: {[k for k,v in alarms.items() if v]} → TX_GAIN={new_gain:.1f}")
 
             # ── Aggiorna state ────────────────────────────────────────────
             with state.lock:
@@ -621,7 +631,9 @@ def api_eeprom_save():
         cfg = state.rds_cfg
 
         results["tx_audio"] = storage.save_group("tx_audio", {
-            "gain": p["gain"], "vol_pilot": p["vol_pilot"],
+            "gain": p["gain"], "gain_l": p["gain_l"], "gain_r": p["gain_r"],
+            "gains_linked": p["gains_linked"], "mono_mode": p["mono_mode"],
+            "vol_pilot": p["vol_pilot"],
             "vol_rds": p["vol_rds"], "vol_mono": p["vol_mono"],
             "vol_stereo": p["vol_stereo"], "preemph": p["preemph"],
             "deemph": p["deemph"], "tx_freq": p["tx_freq"],
@@ -670,11 +682,13 @@ def api_eeprom_load():
     if tx:
         loaded["tx_audio"] = True
         cmd_map = {
-            "gain": "GAIN", "vol_pilot": "VOL_PILOT", "vol_rds": "VOL_RDS",
+            "gain": "GAIN", "gain_l": "GAIN_L", "gain_r": "GAIN_R",
+            "vol_pilot": "VOL_PILOT", "vol_rds": "VOL_RDS",
             "vol_mono": "VOL_MONO", "vol_stereo": "VOL_STEREO",
             "preemph": "PREEMPH", "deemph": "DEEMPH",
             "tx_freq": "TX_FREQ", "tx_gain": "TX_GAIN",
             "pi": "PI", "pty": "PTY", "af1": "AF1", "af2": "AF2", "ta": "TA", "tp": "TP",
+            "mono_mode": "MONO_MODE",
         }
         for k, cmd in cmd_map.items():
             if k in tx:
@@ -683,6 +697,8 @@ def api_eeprom_load():
             send_cmd(f"MUTE={'1' if tx['mute'] else '0'}")
         if "ms" in tx:
             send_cmd(f"MS={'1' if tx['ms'] else '0'}")
+        if "gains_linked" in tx:
+            send_cmd(f"GAINS_LINKED={'1' if tx['gains_linked'] else '0'}")
         with state.lock:
             state.params.update({k: v for k, v in tx.items() if k in state.params})
 

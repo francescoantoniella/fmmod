@@ -312,6 +312,7 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
   }
 
   /* ── Compressore params grid ── */
+  #tab-tx > .grid-3 { align-items: start; }
   #tab-comp .grid-3[style*="gap"]{
     grid-template-columns:1fr !important;
   }
@@ -363,7 +364,8 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
 
 <!-- TABS -->
 <div class="tabs">
-  <div class="tab active" onclick="showTab('tx')">TX / RDS</div>
+  <div class="tab active" onclick="showTab('tx')">TX</div>
+  <div class="tab" onclick="showTab('rds')">RDS</div>
   <div class="tab" onclick="showTab('comp')">Compressore</div>
   <div class="tab" onclick="showTab('power')">Potenza / RF</div>
   <div class="tab" onclick="showTab('history')">Storico</div>
@@ -373,6 +375,68 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
 <!-- ═══════════════════════════════════════════ TAB TX ═══ -->
 <div class="page active" id="tab-tx">
   <div class="grid-3">
+
+    <!-- Ingresso -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Ingresso</span></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+        <!-- Gain con link L/R: bottone a sinistra, slider a destra allineati -->
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          <button id="btn-link" class="btn primary" style="padding:4px 8px;font-size:13px;flex-shrink:0;margin-top:18px" onclick="toggleGainLink()" title="Lega/slega i gain L e R">🔗</button>
+          <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+            <div class="ctrl-item" style="margin:0">
+              <div class="ctrl-lbl"><span id="lbl-gain-l-name">Master</span><span class="ctrl-val" id="lbl-gain-l">0.0 dB</span></div>
+              <input type="range" id="sl-gain-l" min="-24" max="24" step="0.5" value="0"
+                     oninput="onGainLR('L',+this.value)">
+            </div>
+            <div id="gain-r-row" style="display:none" class="ctrl-item" style="margin:0">
+              <div class="ctrl-lbl">Gain R<span class="ctrl-val" id="lbl-gain-r">0.0 dB</span></div>
+              <input type="range" id="sl-gain-r" min="-24" max="24" step="0.5" value="0"
+                     oninput="onGainLR('R',+this.value)">
+            </div>
+          </div>
+        </div>
+        <!-- Modalità -->
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:2px">
+          <button id="btn-mode-stereo" class="btn primary" style="flex:1;padding:4px 0;font-size:10px" onclick="setMonoMode('stereo')">STEREO</button>
+          <button id="btn-mode-mono"   class="btn"         style="flex:1;padding:4px 0;font-size:10px" onclick="setMonoMode('mono')">MONO</button>
+          <button id="btn-mode-l"      class="btn"         style="flex:1;padding:4px 0;font-size:10px" onclick="setMonoMode('L')">MONO L</button>
+          <button id="btn-mode-r"      class="btn"         style="flex:1;padding:4px 0;font-size:10px" onclick="setMonoMode('R')">MONO R</button>
+        </div>
+        <div style="font-family:var(--mono);font-size:13px;color:var(--text-mid);letter-spacing:1px" id="lbl-mono-mode">Stereo normale</div>
+        <!-- Componenti MPX -->
+        <div style="display:flex;gap:5px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:8px">
+          <button id="btn-pilot"  class="btn primary" style="flex:1;padding:4px 0;font-size:10px" onclick="toggleMpx('pilot')">PILOT</button>
+          <button id="btn-stereo" class="btn primary" style="flex:1;padding:4px 0;font-size:10px" onclick="toggleMpx('stereo')">STEREO</button>
+          <button id="btn-rds"    class="btn primary" style="flex:1;padding:4px 0;font-size:10px" onclick="toggleMpx('rds')">RDS</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TX Freq + Gain -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Trasmettitore</span></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:12px">
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">Frequenza TX<span class="ctrl-val" id="lbl-txfreq">100.0 MHz</span></div>
+          <input type="range" id="sl-txfreq" min="87.5" max="108.0" step="0.1" value="100.0"
+                 oninput="onTxParam('txfreq',+this.value)">
+          <div class="range-ends"><span>87.5</span><span>108.0 MHz</span></div>
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">TX Gain (HW)<span class="ctrl-val" id="lbl-txgain">−17 dB</span></div>
+          <input type="range" id="sl-txgain" min="-40" max="0" step="1" value="-17"
+                 oninput="onTxParam('txgain',+this.value)">
+          <div class="range-ends"><span>−40 dB</span><span>0 dB</span></div>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-lbl">Mute</span>
+          <label class="toggle"><input type="checkbox" id="tog-mute" onchange="toggleAndSend('tog-mute','MUTE=')"><span class="tslider"></span></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ingresso (rimosso — ora è il primo pannello) -->
 
     <!-- Output FM -->
     <div class="panel">
@@ -402,83 +466,37 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
       </div>
     </div>
 
-    <!-- TX Freq + Gain -->
-    <div class="panel">
-      <div class="panel-hdr"><span class="panel-title">Trasmettitore</span></div>
-      <div class="panel-body" style="display:flex;flex-direction:column;gap:12px">
-        <div class="ctrl-item">
-          <div class="ctrl-lbl">Frequenza TX<span class="ctrl-val" id="lbl-txfreq">100.0 MHz</span></div>
-          <input type="range" id="sl-txfreq" min="87.5" max="108.0" step="0.1" value="100.0"
-                 oninput="onTxParam('txfreq',+this.value)">
-          <div class="range-ends"><span>87.5</span><span>108.0 MHz</span></div>
-        </div>
-        <div class="ctrl-item">
-          <div class="ctrl-lbl">TX Gain (HW)<span class="ctrl-val" id="lbl-txgain">−17 dB</span></div>
-          <input type="range" id="sl-txgain" min="-40" max="0" step="1" value="-17"
-                 oninput="onTxParam('txgain',+this.value)">
-          <div class="range-ends"><span>−40 dB</span><span>0 dB</span></div>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-lbl">Mute</span>
-          <label class="toggle"><input type="checkbox" id="tog-mute" onchange="toggleAndSend('tog-mute','MUTE=')"><span class="tslider"></span></label>
-        </div>
-      </div>
-    </div>
-
-    <!-- Audio levels -->
-    <div class="panel">
-      <div class="panel-hdr"><span class="panel-title">Livelli MPX</span></div>
-      <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
-        <div class="ctrl-item">
-          <div class="ctrl-lbl">Gain Ingresso<span class="ctrl-val" id="lbl-gain">0.0 dB</span></div>
-          <input type="range" id="sl-gain" min="-24" max="24" step="0.5" value="0"
-                 oninput="onTxParam('gain',+this.value)">
-          <div class="range-ends"><span>−24</span><span>+24 dB</span></div>
-        </div>
-        <div class="ctrl-item">
-          <div class="ctrl-lbl" style="display:flex;align-items:center;gap:8px">
-            <button id="btn-pilot" class="btn primary" style="padding:2px 8px;font-size:10px" onclick="toggleMpx('pilot')">PILOT</button>
-            <span style="flex:1">19 kHz</span><span class="ctrl-val" id="lbl-pilot">6.75 kHz</span>
-          </div>
-          <input type="range" id="sl-pilot" min="0.05" max="0.15" step="0.005" value="0.09"
-                 oninput="onTxParam('pilot',+this.value)">
-        </div>
-        <div class="ctrl-item">
-          <div class="ctrl-lbl" style="display:flex;align-items:center;gap:8px">
-            <button id="btn-stereo" class="btn primary" style="padding:2px 8px;font-size:10px" onclick="toggleMpx('stereo')">STEREO</button>
-            <span style="flex:1">L−R 38 kHz</span><span class="ctrl-val" id="lbl-stereo">33.0 kHz</span>
-          </div>
-          <input type="range" id="sl-stereo" min="0.1" max="0.6" step="0.01" value="0.44"
-                 oninput="onTxParam('stereo',+this.value)">
-        </div>
-        <div class="ctrl-item">
-          <div class="ctrl-lbl" style="display:flex;align-items:center;gap:8px">
-            <button id="btn-rds" class="btn primary" style="padding:2px 8px;font-size:10px" onclick="toggleMpx('rds')">RDS</button>
-            <span style="flex:1">57 kHz</span><span class="ctrl-val" id="lbl-rds">2.25 kHz</span>
-          </div>
-          <input type="range" id="sl-rds" min="0.01" max="0.08" step="0.005" value="0.03"
-                 oninput="onTxParam('rds',+this.value)">
-        </div>
-      </div>
-    </div>
-
     <!-- Pre/De-enfasi -->
     <div class="panel">
       <div class="panel-hdr"><span class="panel-title">Pre/De-enfasi</span></div>
       <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
         <div class="ctrl-item">
-          <div class="ctrl-lbl">Pre-enfasi<span class="ctrl-val" id="lbl-preemph">OFF</span></div>
-          <input type="range" id="sl-preemph" min="0" max="75" step="25" value="0"
-                 oninput="onTxParam('preemph',+this.value)">
-          <div class="range-ends"><span>OFF</span><span>50 µs</span><span>75 µs</span></div>
+          <div class="ctrl-lbl">Pre-enfasi<span class="ctrl-val" id="lbl-preemph">LINEAR</span></div>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <button id="btn-pre-off" class="btn primary" style="flex:1;padding:4px 0;font-size:10px" onclick="setPreemph(0)">LINEAR</button>
+            <button id="btn-pre-50"  class="btn"         style="flex:1;padding:4px 0;font-size:10px" onclick="setPreemph(50)">50 µs</button>
+            <button id="btn-pre-75"  class="btn"         style="flex:1;padding:4px 0;font-size:10px" onclick="setPreemph(75)">75 µs</button>
+          </div>
         </div>
         <div class="ctrl-item">
-          <div class="ctrl-lbl">De-enfasi<span class="ctrl-val" id="lbl-deemph">OFF</span></div>
-          <input type="range" id="sl-deemph" min="0" max="75" step="25" value="0"
+          <div class="ctrl-lbl">De-enfasi<span class="ctrl-val" id="lbl-deemph">LINEAR</span></div>
+          <input type="range" id="sl-deemph" min="0" max="75" step="1" value="0"
                  oninput="onTxParam('deemph',+this.value)">
+          <div class="range-ends"><span>LINEAR</span><span>75 µs</span></div>
         </div>
       </div>
+
     </div>
+
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ TAB INGRESSO ═══ -->
+<!-- (tab rimossa — contenuto inglobato in TX/RDS e Sistema) -->
+
+<!-- ═══════════════════════════════════════════ TAB RDS ═══ -->
+<div class="page" id="tab-rds">
+  <div class="grid-2">
 
     <!-- RDS -->
     <div class="panel col-span-2">
@@ -642,8 +660,12 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
       </div>
     </div>
 
+
   </div>
 </div>
+
+<!-- ════════════════════════════════════════ TAB INGRESSO ═══ -->
+<!-- (tab rimossa — contenuto inglobato in TX/RDS e Sistema) -->
 
 <!-- ═══════════════════════════════════════════ TAB COMP ═══ -->
 <div class="page" id="tab-comp">
@@ -918,7 +940,38 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
 <div class="page" id="tab-system">
   <div class="grid-2">
 
-    <!-- ═══ CATENA WEBRADIO ═══ -->
+    <!-- Livelli MPX -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Livelli MPX</span></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+        <div class="ctrl-item">
+          <div class="ctrl-lbl" style="display:flex;align-items:center;gap:8px">
+            <button id="btn-pilot" class="btn primary" style="padding:2px 8px;font-size:10px" onclick="toggleMpx('pilot')">PILOT</button>
+            <span style="flex:1">19 kHz</span><span class="ctrl-val" id="lbl-pilot">6.75 kHz</span>
+          </div>
+          <input type="range" id="sl-pilot" min="0.05" max="0.15" step="0.005" value="0.09"
+                 oninput="onTxParam('pilot',+this.value)">
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl" style="display:flex;align-items:center;gap:8px">
+            <button id="btn-stereo-mpx" class="btn primary" style="padding:2px 8px;font-size:10px" onclick="toggleMpx('stereo')">STEREO</button>
+            <span style="flex:1">L−R 38 kHz</span><span class="ctrl-val" id="lbl-stereo">33.0 kHz</span>
+          </div>
+          <input type="range" id="sl-stereo" min="0.1" max="0.6" step="0.01" value="0.44"
+                 oninput="onTxParam('stereo',+this.value)">
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl" style="display:flex;align-items:center;gap:8px">
+            <button id="btn-rds" class="btn primary" style="padding:2px 8px;font-size:10px" onclick="toggleMpx('rds')">RDS</button>
+            <span style="flex:1">57 kHz</span><span class="ctrl-val" id="lbl-rds">2.25 kHz</span>
+          </div>
+          <input type="range" id="sl-rds" min="0.01" max="0.08" step="0.005" value="0.03"
+                 oninput="onTxParam('rds',+this.value)">
+        </div>
+      </div>
+    </div>
+
+
     <div class="panel col-span-2">
       <div class="panel-hdr">
         <span class="panel-title">Catena Audio</span>
@@ -1111,9 +1164,9 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
 // ─────────────────────────────────────────────
 const P = {
   thr:-18, ratio:4, knee:6, atk:5, rel:150, mu:0,
-  txfreq:100, txgain:-17, gain:0,
+  txfreq:100, txgain:-17, gain:0, gain_l:0, gain_r:0,
   pilot:0.09, stereo:0.44, rds:0.03,
-  preemph:0, deemph:0,
+  preemph:0, deemph:0, mono_mode:0,
 };
 let compInputDb = -40, compGrDb = 0, compOutPeak = -60;
 let startTime = Date.now();
@@ -1208,8 +1261,8 @@ function onTxParam(name, val) {
     pilot:  ['lbl-pilot',  v=>(v*75).toFixed(1)+' kHz', v=>'VOL_PILOT='+v],
     stereo: ['lbl-stereo', v=>(v*75).toFixed(1)+' kHz', v=>'VOL_STEREO='+v],
     rds:    ['lbl-rds',    v=>(v*75).toFixed(1)+' kHz', v=>'VOL_RDS='+v],
-    preemph:['lbl-preemph',v=>v<=0?'OFF':v+' µs', v=>'PREEMPH='+v],
-    deemph: ['lbl-deemph', v=>v<=0?'OFF':v+' µs', v=>'DEEMPH='+v],
+    preemph:['lbl-preemph',v=>v<=0?'LINEAR':v+' µs', v=>'PREEMPH='+v],
+    deemph: ['lbl-deemph', v=>v<=0?'LINEAR':v+' µs', v=>'DEEMPH='+v],
   };
   if (map[name]) {
     const [lblId, fmt, cmd] = map[name];
@@ -1487,6 +1540,28 @@ async function pollStatus() {
     syncSlider('sl-pilot', 'lbl-pilot',  p.vol_pilot, v=>(v*75).toFixed(1)+' kHz');
     syncSlider('sl-stereo','lbl-stereo', p.vol_stereo, v=>(v*75).toFixed(1)+' kHz');
     syncSlider('sl-rds',   'lbl-rds',    p.vol_rds,  v=>(v*75).toFixed(1)+' kHz');
+    // Gain L/R
+    if (p.gain_l != null) { syncSlider('sl-gain-l','lbl-gain-l', p.gain_l, v=>(v>=0?'+':'')+v.toFixed(1)+' dB'); }
+    if (p.gain_r != null) { syncSlider('sl-gain-r','lbl-gain-r', p.gain_r, v=>(v>=0?'+':'')+v.toFixed(1)+' dB'); }
+    if (p.gains_linked != null && p.gains_linked !== _gainsLinked) {
+      _gainsLinked = p.gains_linked;
+      const btn  = document.getElementById('btn-link');
+      const row  = document.getElementById('gain-r-row');
+      const name = document.getElementById('lbl-gain-l-name');
+      if (btn)  { btn.textContent = _gainsLinked ? '🔗' : '🔓'; btn.classList.toggle('primary',_gainsLinked); btn.classList.toggle('danger',!_gainsLinked); }
+      if (row)  { row.style.display = _gainsLinked ? 'none' : ''; }
+      if (name) { name.textContent = _gainsLinked ? 'Master' : 'Gain L'; }
+    }
+    if (p.mono_mode != null) _updateMonoModeUI(p.mono_mode);
+    // Preemph buttons
+    if (p.preemph != null) {
+      document.getElementById('lbl-preemph').textContent = p.preemph <= 0 ? 'LINEAR' : p.preemph + ' µs';
+      ['btn-pre-off','btn-pre-50','btn-pre-75'].forEach(id => { const el=document.getElementById(id); if(el){el.classList.remove('primary');} });
+      const preMap = {0:'btn-pre-off', 50:'btn-pre-50', 75:'btn-pre-75'};
+      const preBtn = preMap[p.preemph];
+      if (preBtn) { const el=document.getElementById(preBtn); if(el) el.classList.add('primary'); }
+    }
+    if (p.deemph != null) { document.getElementById('lbl-deemph').textContent = p.deemph <= 0 ? 'LINEAR' : p.deemph + ' µs'; syncSlider('sl-deemph','lbl-deemph', p.deemph, v=>v<=0?'LINEAR':v+' µs'); }
 
     if (p.tx_freq != null) {
       P.txfreq = p.tx_freq;
@@ -1956,24 +2031,114 @@ function chainSaveCfg() {
 
 
 pollChainStatus();
-// ── Toggle PILOT / STEREO / RDS ──────────────────────────────────────────────
+// ── Pre-enfasi: 3 pulsanti ────────────────────────────────────────────────────
+function setPreemph(us) {
+  P.preemph = us;
+  document.getElementById('lbl-preemph').textContent = us <= 0 ? 'LINEAR' : us + ' µs';
+  ['btn-pre-off','btn-pre-50','btn-pre-75'].forEach(id => {
+    document.getElementById(id).classList.remove('primary');
+  });
+  const map = {0:'btn-pre-off', 50:'btn-pre-50', 75:'btn-pre-75'};
+  if (map[us] !== undefined) { document.getElementById(map[us]).classList.add('primary'); }
+  sendCmd('PREEMPH=' + us);
+}
+
+// ── Mono mode ─────────────────────────────────────────────────────────────────
+const _monoModeMap = { stereo:0, mono:3, L:1, R:2 };
+const _monoModeLabels = { 0:'Stereo normale', 1:'Mono da L (R = L)', 2:'Mono da R (L = R)', 3:'Mono L+R (mix)' };
+function toggleMono() {
+  const isMono = (P.mono_mode !== 0);
+  setMonoMode(isMono ? 'stereo' : 'mono');
+}
+function setMonoMode(mode) {
+  const val = _monoModeMap[mode] ?? 0;
+  sendCmd('MONO_MODE=' + val);
+  P.mono_mode = val;
+  _updateMonoModeUI(val);
+}
+function _updateMonoModeUI(val) {
+  const ids = ['btn-mode-stereo','btn-mode-mono','btn-mode-l','btn-mode-r'];
+  const vals = [0, 3, 1, 2];
+  ids.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('primary', vals[i] === val);
+  });
+  const lbl = document.getElementById('lbl-mono-mode');
+  if (lbl) lbl.textContent = _monoModeLabels[val] ?? '';
+  // Bottone MONO nella tab TX: primary se in qualsiasi modalità mono, neutro se stereo
+  const btnMono = document.getElementById('btn-mono');
+  if (btnMono) {
+    btnMono.classList.toggle('primary', val !== 0);
+  }
+}
+
+// ── Gain L/R ─────────────────────────────────────────────────────────────────
+let _gainsLinked = true;
+function toggleGainLink() {
+  _gainsLinked = !_gainsLinked;
+  const btn  = document.getElementById('btn-link');
+  const row  = document.getElementById('gain-r-row');
+  const name = document.getElementById('lbl-gain-l-name');
+  if (_gainsLinked) {
+    btn.textContent = '🔗'; btn.classList.add('primary'); btn.classList.remove('danger');
+    if (row)  row.style.display = 'none';
+    if (name) name.textContent = 'Master';
+  } else {
+    btn.textContent = '🔓'; btn.classList.remove('primary'); btn.classList.add('danger');
+    if (row)  row.style.display = '';
+    if (name) name.textContent = 'Gain L';
+  }
+  sendCmd('GAINS_LINKED=' + (_gainsLinked ? '1' : '0'));
+}
+function onGainLR(ch, val) {
+  const fmtDb = v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' dB';
+  if (ch === 'L') {
+    document.getElementById('lbl-gain-l').textContent = fmtDb(val);
+    sendCmd('GAIN_L=' + val);
+    if (_gainsLinked) {
+      document.getElementById('sl-gain-r').value = val;
+      document.getElementById('lbl-gain-r').textContent = fmtDb(val);
+      sendCmd('GAIN_R=' + val);
+      // sincronizza anche lo slider legacy nella tab TX
+      document.getElementById('sl-gain').value = val;
+      document.getElementById('lbl-gain').textContent = fmtDb(val);
+      sendCmd('GAIN=' + val);
+      P.gain = val;
+    }
+    P.gain_l = val;
+  } else {
+    document.getElementById('lbl-gain-r').textContent = fmtDb(val);
+    sendCmd('GAIN_R=' + val);
+    P.gain_r = val;
+  }
+}
+
+
 const _mpxSaved  = { pilot:0.09, stereo:0.44, rds:0.03 };
 const _mpxActive = { pilot:true, stereo:true,  rds:true  };
 
 function toggleMpx(name) {
   const nowOn = !_mpxActive[name];
   _mpxActive[name] = nowOn;
-  const btn = document.getElementById('btn-' + name);
-  const sl  = document.getElementById('sl-'  + name);
+  // aggiorna tutti i bottoni associati a questo componente
+  const btnIds = name === 'stereo'
+    ? ['btn-stereo', 'btn-stereo-mpx']
+    : ['btn-' + name];
+  const sl = document.getElementById('sl-' + name);
+  btnIds.forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    if (nowOn) btn.classList.replace('danger','primary');
+    else       btn.classList.replace('primary','danger');
+  });
   if (nowOn) {
-    btn.classList.replace('danger','primary');
     sl.disabled = false; sl.style.opacity = '';
     const v = _mpxSaved[name];
     sl.value = v;
     onTxParam(name, v);
   } else {
     _mpxSaved[name] = parseFloat(sl.value) || _mpxSaved[name];
-    btn.classList.replace('primary','danger');
     sl.disabled = true; sl.style.opacity = '0.3';
     document.getElementById('lbl-' + name).textContent = '0.0 kHz';
     sendCmd({ pilot:'VOL_PILOT=0', stereo:'VOL_STEREO=0', rds:'VOL_RDS=0' }[name]);

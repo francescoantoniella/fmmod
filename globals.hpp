@@ -6,8 +6,14 @@
 
 struct GlobalSettings {
     // ── Gain ingresso ────────────────────────────────────────────────────────
-    std::atomic<float> input_gain_db{0.f};
+    std::atomic<float> input_gain_db{0.f};   // gain legacy (usato se gains linked)
+    std::atomic<float> gain_l_db{0.f};       // gain canale L
+    std::atomic<float> gain_r_db{0.f};       // gain canale R
+    std::atomic<bool>  gains_linked{true};   // true = L e R si muovono insieme
     std::atomic<bool>  mute{false};
+    // ── Modalità mono ────────────────────────────────────────────────────────
+    // 0 = stereo normale, 1 = mono da L, 2 = mono da R, 3 = mono da L+R (mix)
+    std::atomic<int>   mono_mode{0};
 
     // ── Volumi MPX ───────────────────────────────────────────────────────────
     std::atomic<float> vol_pilot{0.09f};
@@ -44,6 +50,8 @@ struct GlobalSettings {
     // ── MPX metering (scritti dal thread audio) ───────────────────────────────
     std::atomic<float> mpx_peak{0.f};
     std::atomic<float> mpx_rms{0.f};
+    std::atomic<float> mono_peak{0.f};
+    std::atomic<float> stereo_peak{0.f};
 
     // ── RDS (protetti da mutex) ───────────────────────────────────────────────
     std::mutex rds_mutex;

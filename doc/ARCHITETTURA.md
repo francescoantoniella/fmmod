@@ -127,7 +127,7 @@ Browser (index.html)
 
 ```
 Chunk 480 campioni @ 48 kHz (10 ms)
-  1. apply_input_gain()         gain lineare in dB
+  1. apply_input_processing()   gain L/R (linked o separati), mute, mono_mode routing
   2. AudioLimiter.process()     hard limiter (threshold 0.99, release 100 ms)
   3. apply_deemphasis()         IIR 1° ordine, τ = 50 µs o 75 µs
   4. SingleBandCompressor       feedforward RMS, soft-knee, makeup gain
@@ -136,6 +136,20 @@ Chunk 480 campioni @ 48 kHz (10 ms)
   7. MpxModulator.process()     segnale MPX completo (tanh soft-limit)
   8. PlutoOutput.write()        IQ int16 → PlutoSDR o stdout
 ```
+
+#### Gain ingresso e modalità mono
+
+`apply_input_processing()` sostituisce `apply_input_gain()` e gestisce:
+
+| Parametro | Comando UDP | Default | Descrizione |
+|-----------|-------------|---------|-------------|
+| `input_gain_db` | `GAIN=<dB>` | 0 | Gain master (–24 … +24 dB); applicato a L e R quando linked |
+| `gain_l_db` | `GAIN_L=<dB>` | 0 | Gain canale L indipendente |
+| `gain_r_db` | `GAIN_R=<dB>` | 0 | Gain canale R indipendente |
+| `gains_linked` | `GAINS_LINKED=0\|1` | 1 | Se 1, `GAIN=` sovrascrive entrambi i canali |
+| `mono_mode` | `MONO_MODE=0..3` | 0 | 0=stereo, 1=mono da L, 2=mono da R, 3=mix (L+R)/2 |
+
+`GAIN=<dB>` scrive contemporaneamente `input_gain_db`, `gain_l_db` e `gain_r_db`.
 
 ---
 
@@ -172,8 +186,10 @@ Chunk 480 campioni @ 48 kHz (10 ms)
 ### Stato globale (`State`)
 
 ```python
-state.params       # mirror GlobalSettings C++: gain, vol_*, tx_freq, tx_gain, pi, ps, rt...
-state.metering     # comp_gr_db, comp_input_db, comp_output_peak, mpx_peak, mpx_rms
+state.params       # mirror GlobalSettings C++: gain, gain_l, gain_r, gains_linked,
+                   #   mono_mode, vol_*, tx_freq, tx_gain, pi, ps, rt, ...
+state.metering     # comp_gr_db, comp_input_db, comp_output_peak,
+                   #   mpx_peak, mpx_rms, mono_peak, stereo_peak
 state.sensors      # temp_c, fwd_w, ref_w, swr, dac_value, pid_output
 state.alarms       # temp_high, swr_high, fwd_low, fwd_high
 state.history      # deque 600 punti (10 min @ 1 Hz): ts, temp, fwd, ref, swr, comp_gr
@@ -185,6 +201,8 @@ state.softstart_active
 state.serial_number
 ```
 
+All'avvio, `server.py` avvia automaticamente la catena webradio (`chain.start()`). Il risultato viene loggato ma un fallimento non blocca il server.
+
 ---
 
 ## 5. Interfaccia web (index.html)
@@ -195,11 +213,32 @@ Applicazione single-page. **Nessuna dipendenza esterna a runtime** (font serviti
 
 | Tab | Contenuto |
 |-----|-----------|
-| TX / RDS | Frequenza, gain, volumi MPX in kHz, toggle pilot/stereo/RDS, enfasi, MUTE, pannello RDS avanzato |
+| TX | Pannello Ingresso (gain L/R, link, mono mode), Output MPX (peak, VU per componente), Impostazioni (freq/gain TX, enfasi, MUTE), catena webradio |
+| RDS | Pannello RDS avanzato: PI, PTY, PS lungo, modalità RT, Icecast, AF1/AF2, TA/TP/MS |
 | Compressore | Curva di trasferimento, parametri, metering GR/in/out |
 | Potenza / RF | Temperatura, FWD/REF/SWR, DAC, PID, Soft-start, allarmi |
 | Storico | Grafici canvas: temp, FWD, SWR, GR compressore (ultimi 10 min) |
 | Sistema | Serial number, backend storage, uptime, Save/Load EEPROM |
+
+### Pannello Ingresso (tab TX)
+
+Slider di gain separabili per canale L e R; bottone link (🔗) per tenerli agganciati.
+Quando linked, trascinare il master L equivale a `GAIN=<dB>` (aggiorna entrambi i canali).
+Quando unlinked, invia `GAIN_L=` o `GAIN_R=` separatamente.
+
+Pulsanti modalità mono (invia `MONO_MODE=`):
+
+| Bottone | Valore | Effetto |
+|---------|--------|---------|
+| STEREO | 0 | Stereo normale |
+| MONO | 3 | Mix (L+R)/2 su entrambi i canali |
+| MONO L | 1 | Canale L duplicato su R |
+| MONO R | 2 | Canale R duplicato su L |
+
+La pre-enfasi è selezionata tramite tre pulsanti: **LINEAR** (0 µs), **50 µs**, **75 µs** (invia `PREEMPH=`).
+
+I pulsanti **PILOT**, **STEREO**, **RDS** attivano/disattivano le rispettive sottoportanti.
+Il valore del cursore viene salvato e ripristinato al re-enable. Inviano `VOL_PILOT=0`, `VOL_STEREO=0`, `VOL_RDS=0` al modulatore tramite UDP.
 
 ### Pannello Output FM (tab TX)
 
@@ -213,7 +252,7 @@ Visualizza separatamente la deviazione nominale di ogni componente MPX:
 | Stereo (L-R) | 38 kHz DSB-SC | `vol_stereo × 75 kHz` |
 | RDS | 57 kHz | `vol_rds × 75 kHz` |
 
-I pulsanti **PILOT**, **STEREO**, **RDS** nel pannello di controllo permettono di attivare/disattivare le rispettive sottoportanti a runtime. Il valore del cursore viene salvato e ripristinato al re-enable. Inviano `VOL_PILOT=0`, `VOL_STEREO=0`, `VOL_RDS=0` al modulatore tramite UDP.
+Il metering include anche `mono_peak` e `stereo_peak` (picco normalizzato 0–1 del segnale L+R e L–R prima della modulazione MPX), aggiornati ogni chunk (10 ms) e disponibili nella risposta `GET` UDP e in `/api/status`.
 
 ### Pannello RDS avanzato
 
@@ -237,7 +276,8 @@ I pulsanti **PILOT**, **STEREO**, **RDS** nel pannello di controllo permettono d
 Offset   Size  Magic   Gruppo        Contenuto
 ────────────────────────────────────────────────────────────────────
 0x0000   128B  0xFE02  sn            Numero di serie (binario)
-0x0080   256B  0xFE10  tx_audio      Gain, volumi MPX, TX freq/gain, enfasi, mute, PI, PTY, AF1
+0x0080   256B  0xFE10  tx_audio      Gain (master, L, R, linked), mono_mode, volumi MPX,
+                                     TX freq/gain, enfasi, mute, PI, PTY, AF1, AF2, TA, TP, MS
 0x0180   256B  0xFE11  compressor    comp_en, thr, ratio, knee, atk, rel, mu, lim
 0x0280   256B  0xFE12  rds_cfg       rt_mode, rt_alt_sec, ps_long, ps_cycle_sec,
                                      radio_name, icecast_url, icecast_interval_sec
@@ -606,19 +646,29 @@ Porta UDP **9120**. Comandi in testo ASCII, uno per pacchetto.
 
 ```
 GET    →  risposta multiline KEY=VALUE
+
+Campi restituiti (oltre a tutti i parametri settabili):
+  GAIN_L, GAIN_R, GAINS_LINKED, MONO_MODE
+  COMP_GR, COMP_IN, COMP_OUTPK
+  MPX_PEAK, MPX_RMS, MONO_PEAK, STEREO_PEAK
+  PS, RT, PI, PTY, TA, TP, MS, AF1, AF2
 ```
 
 ### Audio
 
 ```
-GAIN=<dB>         input gain (-24..+24)
+GAIN=<dB>             gain master L+R (-24..+24); aggiorna anche gain_l e gain_r
+GAIN_L=<dB>           gain canale L (-24..+24); usato solo se GAINS_LINKED=0
+GAIN_R=<dB>           gain canale R (-24..+24); usato solo se GAINS_LINKED=0
+GAINS_LINKED=0|1      1=gain L e R si muovono insieme tramite GAIN=
+MONO_MODE=0|1|2|3     0=stereo, 1=mono da L (R←L), 2=mono da R (L←R), 3=mix (L+R)/2
 MUTE=0|1
-VOL_PILOT=<0-1>   volume sottoportante 19 kHz
-VOL_RDS=<0-1>     volume sottoportante RDS 57 kHz
-VOL_MONO=<0-1>    volume canale mono (L+R)
-VOL_STEREO=<0-1>  volume canale stereo (L-R)
-PREEMPH=<0|50|75> pre-enfasi in µs
-DEEMPH=<0|50|75>  de-enfasi in µs
+VOL_PILOT=<0-1>       volume sottoportante 19 kHz
+VOL_RDS=<0-1>         volume sottoportante RDS 57 kHz
+VOL_MONO=<0-1>        volume canale mono (L+R)
+VOL_STEREO=<0-1>      volume canale stereo (L-R)
+PREEMPH=<0|50|75>     pre-enfasi in µs (0=lineare)
+DEEMPH=<0|75>         de-enfasi in µs (0=lineare)
 ```
 
 ### RDS

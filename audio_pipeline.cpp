@@ -28,11 +28,26 @@ constexpr int   SEPARATION_L_ONLY_SAMPLES  = 10 * SAMPLE_RATE_48K;
 constexpr int   SEPARATION_SILENCE_SAMPLES =  2 * SAMPLE_RATE_48K;
 constexpr int   SEPARATION_R_ONLY_SAMPLES  = 10 * SAMPLE_RATE_48K;
 
-// ── Input gain ───────────────────────────────────────────────────────────────
-inline void apply_input_gain(float* L, float* R, int n, float gain_db) {
-    if (gain_db == 0.f) return;
-    const float factor = std::pow(10.f, gain_db / 20.f);
-    for (int i = 0; i < n; i++) { L[i] *= factor; R[i] *= factor; }
+// ── Input gain + mono mode ────────────────────────────────────────────────────
+// Applica gain L/R separati (o linked) e duplica canale se mono_mode != 0.
+inline void apply_input_processing(float* L, float* R, int n, const GlobalSettings& s) {
+    const bool linked   = s.gains_linked.load(std::memory_order_relaxed);
+    const bool muted    = s.mute.load(std::memory_order_relaxed);
+    const float gl = muted ? -1000.f : (linked
+        ? s.input_gain_db.load(std::memory_order_relaxed)
+        : s.gain_l_db.load(std::memory_order_relaxed));
+    const float gr = muted ? -1000.f : (linked
+        ? s.input_gain_db.load(std::memory_order_relaxed)
+        : s.gain_r_db.load(std::memory_order_relaxed));
+    const float fl = std::pow(10.f, gl / 20.f);
+    const float fr = std::pow(10.f, gr / 20.f);
+    for (int i = 0; i < n; i++) { L[i] *= fl; R[i] *= fr; }
+
+    // Mono mode: 0=stereo, 1=L→R, 2=R→L, 3=mix L+R
+    const int mm = s.mono_mode.load(std::memory_order_relaxed);
+    if (mm == 1) { for (int i = 0; i < n; i++) R[i] = L[i]; }
+    else if (mm == 2) { for (int i = 0; i < n; i++) L[i] = R[i]; }
+    else if (mm == 3) { for (int i = 0; i < n; i++) { float m = (L[i]+R[i])*0.5f; L[i]=m; R[i]=m; } }
 }
 
 // ── Hard limiter (protezione picchi prima del compressore) ───────────────────
@@ -258,6 +273,18 @@ void audio_processing_thread(GlobalSettings& settings, const Config& config) {
 
         mpx_mod.process(mpx_out.data(), mono_912k.data(), stereo_912k.data(),
                         CHUNK_912K, rds, settings);
+
+        // Metering mono e stereo (peak del chunk corrente, in frazione 0-1)
+        float pk_mono = 0.f, pk_stereo = 0.f;
+        for (int i = 0; i < CHUNK_912K; i++) {
+            float vm = std::abs(mono_912k[i]);
+            float vs = std::abs(stereo_912k[i]);
+            if (vm > pk_mono)   pk_mono   = vm;
+            if (vs > pk_stereo) pk_stereo = vs;
+        }
+        settings.mono_peak.store(pk_mono,   std::memory_order_relaxed);
+        settings.stereo_peak.store(pk_stereo, std::memory_order_relaxed);
+
         store_mpx_metering(settings, mpx_out.data(), CHUNK_912K);
         output.write(mpx_out.data(), CHUNK_912K);
     };
@@ -340,12 +367,7 @@ void audio_processing_thread(GlobalSettings& settings, const Config& config) {
         if (!got) break;
 
         // Gain ingresso (o mute)
-        float gain_db = settings.mute.load(std::memory_order_relaxed)
-            ? -1000.f
-            : settings.input_gain_db.load(std::memory_order_relaxed);
-        apply_input_gain(in_L_48k.data(), in_R_48k.data(), CHUNK_48K, gain_db);
-
-        // Hard limiter (protezione picchi estremi, soglia 0.99)
+        apply_input_processing(in_L_48k.data(), in_R_48k.data(), CHUNK_48K, settings);
         limiter.process(in_L_48k.data(), in_R_48k.data(), CHUNK_48K, 0.99f, 100.f);
 
         // Compressore/limiter monobanda
@@ -380,6 +402,19 @@ void audio_processing_thread(GlobalSettings& settings, const Config& config) {
         // Modulatore MPX
         mpx_mod.process(mpx_out.data(), mono_912k.data(), stereo_912k.data(),
                         CHUNK_912K, rds, settings);
+
+        // Metering mono e stereo
+        {
+            float pk_mono = 0.f, pk_stereo = 0.f;
+            for (int i = 0; i < CHUNK_912K; i++) {
+                float vm = std::abs(mono_912k[i]);
+                float vs = std::abs(stereo_912k[i]);
+                if (vm > pk_mono)   pk_mono   = vm;
+                if (vs > pk_stereo) pk_stereo = vs;
+            }
+            settings.mono_peak.store(pk_mono,   std::memory_order_relaxed);
+            settings.stereo_peak.store(pk_stereo, std::memory_order_relaxed);
+        }
 
         // Metering MPX
         store_mpx_metering(settings, mpx_out.data(), CHUNK_912K);
