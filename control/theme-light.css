@@ -1,0 +1,37 @@
+/*
+ * theme-light.css — Tema chiaro professionale
+ * Broadcast console style: sfondo grigio chiaro, testo scuro, accenti blu/verde
+ */
+:root {
+  --bg:         #f0f2f2;
+  --bg2:        #e4e8e8;
+  --panel:      #ffffff;
+  --panel2:     #f5f7f7;
+  --border:     #ccd4d4;
+  --border2:    #b8c4c4;
+  --text:       #1a2e2e;
+  --text-dim:   #8aacac;
+  --text-mid:   #4a7070;
+  --green:      #00995e;
+  --green-dim:  #ccf0e0;
+  --yellow:     #c48000;
+  --red:        #cc1a3a;
+  --red-dim:    #ffd0d8;
+  --blue:       #0070a0;
+  --blue-dim:   #cce8f5;
+  --orange:     #c05000;
+  --purple:     #7030cc;
+}
+body::before { display:none; }
+.panel-hdr { border-top-color:rgba(0,112,160,.15); }
+input[type=range]::-webkit-slider-thumb { box-shadow:0 0 0 2px var(--bg),0 1px 4px rgba(0,0,0,.3); }
+.big-val.green,.big-val.yellow,.big-val.red { text-shadow:none; }
+.logo,.freq-display { text-shadow:none; }
+.status-chip .dot,.status-chip.alarm .dot { box-shadow:none; }
+.toggle input:checked+.tslider { background:var(--green-dim); }
+.toggle input:checked+.tslider::before { box-shadow:none; }
+.btn:hover { background:var(--blue-dim); }
+.btn.primary:hover { background:var(--green-dim); }
+.btn.danger:hover { background:var(--red-dim); }
+.curve-canvas { background:#e8eded; }
+.hist-canvas { background:var(--bg2); }

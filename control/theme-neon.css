@@ -1,0 +1,75 @@
+/*
+ * theme-neon.css — Tema cyberpunk / heavy glow
+ */
+:root {
+  --bg:         #020408;
+  --bg2:        #050a10;
+  --panel:      #060c14;
+  --panel2:     #08101c;
+  --border:     #0a1828;
+  --border2:    #102030;
+  --text:       #c0e8ff;
+  --text-dim:   #1a3850;
+  --text-mid:   #4080a0;
+  --green:      #00ffcc;
+  --green-dim:  #003322;
+  --yellow:     #ffee00;
+  --red:        #ff0055;
+  --red-dim:    #330010;
+  --blue:       #00eeff;
+  --blue-dim:   #002233;
+  --orange:     #ff8800;
+  --purple:     #cc44ff;
+}
+/* Scanline più marcata */
+body::before {
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.18) 2px,rgba(0,0,0,.18) 4px);
+}
+.logo {
+  text-shadow:0 0 30px rgba(0,238,255,.8),0 0 60px rgba(0,238,255,.4);
+  animation: logopulse 3s ease-in-out infinite;
+}
+@keyframes logopulse {
+  0%,100%{text-shadow:0 0 30px rgba(0,238,255,.8),0 0 60px rgba(0,238,255,.4)}
+  50%{text-shadow:0 0 50px rgba(0,238,255,1),0 0 100px rgba(0,238,255,.6)}
+}
+.freq-display {
+  text-shadow:0 0 20px rgba(0,255,204,.9),0 0 40px rgba(0,255,204,.5);
+}
+.big-val.green {
+  text-shadow:0 0 24px rgba(0,255,204,.8),0 0 48px rgba(0,255,204,.4);
+}
+.big-val.yellow {
+  text-shadow:0 0 20px rgba(255,238,0,.8),0 0 40px rgba(255,238,0,.4);
+}
+.big-val.red {
+  text-shadow:0 0 24px rgba(255,0,85,.9),0 0 48px rgba(255,0,85,.5);
+}
+.status-chip .dot {
+  box-shadow:0 0 12px var(--green),0 0 24px var(--green);
+}
+.panel-hdr {
+  border-top-color:rgba(0,238,255,.35);
+}
+.panel {
+  box-shadow:inset 0 0 20px rgba(0,238,255,.03);
+}
+.tab.active {
+  text-shadow:0 0 10px var(--blue);
+}
+input[type=range]::-webkit-slider-thumb {
+  box-shadow:0 0 0 2px var(--bg),0 0 14px var(--blue),0 0 28px rgba(0,238,255,.4);
+}
+.btn.primary {
+  box-shadow:0 0 8px rgba(0,255,204,.3);
+}
+.btn.primary:hover {
+  box-shadow:0 0 16px rgba(0,255,204,.6);
+  background:var(--green-dim);
+}
+.alarm-chip.active {
+  box-shadow:0 0 16px rgba(255,0,85,.4),0 0 32px rgba(255,0,85,.2);
+}
+.vu-fill.green {
+  box-shadow:0 0 6px var(--green);
+}

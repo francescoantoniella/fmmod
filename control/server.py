@@ -836,6 +836,14 @@ def serve_fonts(filename):
     return static_file(filename, root=os.path.join(os.path.dirname(__file__), "fonts"))
 
 # ── Serve HTML ───────────────────────────────
+@app.route("/app.js")
+def serve_appjs():
+    return static_file("app.js", root=os.path.dirname(__file__))
+
+@app.route("/<filename:re:[a-zA-Z0-9_-]+\.css>")
+def serve_css(filename):
+    return static_file(filename, root=os.path.dirname(__file__))
+
 @app.route("/")
 @app.route("/index.html")
 def index():
