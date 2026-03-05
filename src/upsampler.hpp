@@ -82,7 +82,7 @@ public:
     }
 
     inline void process_block(const float* in_48k, int num_in, float* out_912k) {
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#if defined(__aarch64__)
         _process_block_neon(in_48k, num_in, out_912k);
 #else
         _process_block_scalar(in_48k, num_in, out_912k);
@@ -106,8 +106,8 @@ private:
         }
     }
 
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-    // ── Implementazione NEON (AArch64 / ARMv7+NEON) ──────────────────────────
+#if defined(__aarch64__)
+    // ── Implementazione NEON float64 (AArch64 only) ───────────────────────────
     // Strategia: per ogni campione input, calcoliamo le 19 fasi in output.
     // Il loop interno (tap) accumula 2 double alla volta con vfmadd (float64x2).
     // Layout [tap][phase] garantisce accesso coalescente ai coefficienti per fase.
