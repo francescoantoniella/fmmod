@@ -30,17 +30,42 @@ constexpr int   SEPARATION_R_ONLY_SAMPLES  = 10 * SAMPLE_RATE_48K;
 
 // ── Input gain + mono mode ────────────────────────────────────────────────────
 // Applica gain L/R separati (o linked) e duplica canale se mono_mode != 0.
+// ── Phase shifter (ritardo frazionario per sfasamento canale R) ──────────────
+class PhaseShifter {
+    static constexpr int BUF = 4096;
+    float _buf[BUF]{};
+    int   _wr = 0;
+public:
+    float process(float x, float delay_samples) {
+        _buf[_wr & (BUF-1)] = x;
+        float rd  = static_cast<float>(_wr) - delay_samples;
+        int   i0  = static_cast<int>(rd) & (BUF-1);
+        int   i1  = (i0 - 1) & (BUF-1);
+        float frac = rd - std::floor(rd);
+        float out  = _buf[i0] + frac * (_buf[i1] - _buf[i0]);
+        _wr++;
+        return out;
+    }
+};
+
+static PhaseShifter g_phase_shifter_r;
+
 inline void apply_input_processing(float* L, float* R, int n, const GlobalSettings& s) {
-    const bool linked   = s.gains_linked.load(std::memory_order_relaxed);
     const bool muted    = s.mute.load(std::memory_order_relaxed);
-    const float gl = muted ? -1000.f : (linked
-        ? s.input_gain_db.load(std::memory_order_relaxed)
-        : s.gain_l_db.load(std::memory_order_relaxed));
-    const float gr = muted ? -1000.f : (linked
-        ? s.input_gain_db.load(std::memory_order_relaxed)
-        : s.gain_r_db.load(std::memory_order_relaxed));
+    const bool in_test  = s.test_mode.load(std::memory_order_relaxed) > 0;
+    const bool muted_l  = in_test && s.mute_l.load(std::memory_order_relaxed);
+    const bool muted_r  = in_test && s.mute_r.load(std::memory_order_relaxed);
+    // Legge sempre gain_l_db / gain_r_db — il parser UDP li tiene in sync
+    // quando gains_linked=true (GAIN= aggiorna entrambi, GAIN_L= aggiorna solo L)
+    const float gl = (muted || muted_l) ? -1000.f : s.gain_l_db.load(std::memory_order_relaxed);
+    const float gr = (muted || muted_r) ? -1000.f : s.gain_r_db.load(std::memory_order_relaxed);
     const float fl = std::pow(10.f, gl / 20.f);
     const float fr = std::pow(10.f, gr / 20.f);
+    // Debug: stampa ogni ~5 sec (ogni 500 chunk a 48kHz/480 campioni)
+    { static int _dbg_ctr = 0;
+      if (++_dbg_ctr >= 500) { _dbg_ctr = 0;
+        std::fprintf(stderr, "[gain] gl=%.1fdB gr=%.1fdB fl=%.4f fr=%.4f muted=%d in_test=%d\n",
+                     gl, gr, fl, fr, (int)muted, (int)in_test); } }
     for (int i = 0; i < n; i++) { L[i] *= fl; R[i] *= fr; }
 
     // Mono mode: 0=stereo, 1=L→R, 2=R→L, 3=mix L+R
@@ -48,6 +73,18 @@ inline void apply_input_processing(float* L, float* R, int n, const GlobalSettin
     if (mm == 1) { for (int i = 0; i < n; i++) R[i] = L[i]; }
     else if (mm == 2) { for (int i = 0; i < n; i++) L[i] = R[i]; }
     else if (mm == 3) { for (int i = 0; i < n; i++) { float m = (L[i]+R[i])*0.5f; L[i]=m; R[i]=m; } }
+
+    // Inversione fase e sfasamento R — solo in modalità test
+    if (in_test) {
+        if (s.phase_inv_r.load(std::memory_order_relaxed))
+            for (int i = 0; i < n; i++) R[i] = -R[i];
+
+        const float deg = s.phase_offset_deg.load(std::memory_order_relaxed);
+        if (deg > 0.5f) {
+            const float delay = deg / 360.f * (static_cast<float>(SAMPLE_RATE_48K) / 1000.f);
+            for (int i = 0; i < n; i++) R[i] = g_phase_shifter_r.process(R[i], delay);
+        }
+    }
 }
 
 // ── Hard limiter (protezione picchi prima del compressore) ───────────────────
@@ -76,26 +113,28 @@ private:
     float gain_ = 1.f;
 };
 
-// ── De-enfasi ────────────────────────────────────────────────────────────────
+// ── De-enfasi (stati IIR in double per evitare drift numerico) ───────────────
 inline void apply_deemphasis(float* L, float* R, int n, float tau_us,
-                              float& stL, float& stR) {
+                              double& stL, double& stR) {
     if (tau_us <= 0.f) return;
-    const float alpha = std::exp(-1e6f / (static_cast<float>(SAMPLE_RATE_48K) * tau_us));
-    const float a1 = 1.f - alpha;
+    const double alpha = std::exp(-1e6 / (static_cast<double>(SAMPLE_RATE_48K) * tau_us));
+    const double a1    = 1.0 - alpha;
     for (int i = 0; i < n; i++) {
-        stL = alpha * stL + a1 * L[i]; L[i] = stL;
-        stR = alpha * stR + a1 * R[i]; R[i] = stR;
+        stL = alpha * stL + a1 * static_cast<double>(L[i]); L[i] = static_cast<float>(stL);
+        stR = alpha * stR + a1 * static_cast<double>(R[i]); R[i] = static_cast<float>(stR);
     }
 }
 
-// ── Pre-enfasi ───────────────────────────────────────────────────────────────
+// ── Pre-enfasi (stati IIR in double per evitare drift numerico) ──────────────
 inline void apply_pre_emphasis(float* L, float* R, int n, float alpha,
-                                float& stL, float& stR) {
+                                double& stL, double& stR) {
     if (alpha <= 0.f) return;
+    const double a = static_cast<double>(alpha);
     for (int i = 0; i < n; i++) {
-        float l = L[i], r = R[i];
-        L[i] = l - alpha * stL;
-        R[i] = r - alpha * stR;
+        double l = static_cast<double>(L[i]);
+        double r = static_cast<double>(R[i]);
+        L[i] = static_cast<float>(l - a * stL);
+        R[i] = static_cast<float>(r - a * stR);
         stL = l; stR = r;
     }
 }
@@ -237,8 +276,8 @@ void audio_processing_thread(GlobalSettings& settings, const Config& config) {
     std::vector<float> mpx_out(CHUNK_912K);
 
     AudioLimiter limiter;
-    float de_state_L = 0.f, de_state_R = 0.f;
-    float pre_state_L = 0.f, pre_state_R = 0.f;
+    double de_state_L = 0.0, de_state_R = 0.0;   // IIR in double
+    double pre_state_L = 0.0, pre_state_R = 0.0;  // IIR in double
     int   chunk_count = 0;
     const int debug_interval = 100;  // ~1 s a 10 ms/chunk
 
@@ -360,18 +399,41 @@ void audio_processing_thread(GlobalSettings& settings, const Config& config) {
     }
 
     // ── Loop principale ───────────────────────────────────────────────────────
+    // Accumulatore fase in double per minimizzare errori di arrotondamento
+    double tone_phase = 0.0;
     while (true) {
         rds.update(settings);
 
         bool got = input.read(in_L_48k.data(), in_R_48k.data(), CHUNK_48K);
         if (!got) break;
 
+        // ── Modalità test: sovrascrive l'input ───────────────────────────────
+        const int tm = settings.test_mode.load(std::memory_order_relaxed);
+        if (tm == 1) {
+            // Tono sinusoidale puro: fase accumulata in double, fmod per evitare drift
+            const double hz  = static_cast<double>(settings.test_tone_hz.load(std::memory_order_relaxed));
+            const float  amp = settings.test_tone_amp.load(std::memory_order_relaxed);
+            const double inc = 2.0 * M_PI * hz / static_cast<double>(SAMPLE_RATE_48K);
+            for (int i = 0; i < CHUNK_48K; i++) {
+                float s = amp * static_cast<float>(std::sin(tone_phase));
+                in_L_48k[i] = s;
+                in_R_48k[i] = s;
+                tone_phase = std::fmod(tone_phase + inc, 2.0 * M_PI);
+            }
+        } else if (tm == 2) {
+            // CW: input azzerato → portante non modulata
+            std::fill(in_L_48k.begin(), in_L_48k.end(), 0.f);
+            std::fill(in_R_48k.begin(), in_R_48k.end(), 0.f);
+        } else {
+            tone_phase = 0.0;
+        }
+
         // Gain ingresso (o mute)
         apply_input_processing(in_L_48k.data(), in_R_48k.data(), CHUNK_48K, settings);
-        limiter.process(in_L_48k.data(), in_R_48k.data(), CHUNK_48K, 0.99f, 100.f);
 
-        // Compressore/limiter monobanda
-        {
+        // Limiter e compressore bypassati in test mode per preservare la purezza del tono
+        if (tm == 0) {
+            limiter.process(in_L_48k.data(), in_R_48k.data(), CHUNK_48K, 0.99f, 100.f);
             CompressorParams cp = load_comp_params(settings);
             compressor.process(in_L_48k.data(), in_R_48k.data(), CHUNK_48K, cp);
             store_comp_metering(settings, compressor);

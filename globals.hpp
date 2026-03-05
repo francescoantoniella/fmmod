@@ -11,6 +11,15 @@ struct GlobalSettings {
     std::atomic<float> gain_r_db{0.f};       // gain canale R
     std::atomic<bool>  gains_linked{true};   // true = L e R si muovono insieme
     std::atomic<bool>  mute{false};
+    std::atomic<bool>  mute_l{false};        // mute solo canale L
+    std::atomic<bool>  mute_r{false};        // mute solo canale R
+    std::atomic<bool>  phase_inv_r{false};   // inversione di fase canale R
+    std::atomic<float> phase_offset_deg{0.f};// sfasamento continuo R rispetto a L (0–360°)
+    // ── Modalità test (runtime) ───────────────────────────────────────────────
+    // 0 = normale, 1 = tono 1kHz L+R, 2 = CW (portante non modulata)
+    std::atomic<int>   test_mode{0};
+    std::atomic<float> test_tone_hz{1000.f};   // frequenza tono (10–15000 Hz)
+    std::atomic<float> test_tone_amp{0.5f};    // ampiezza tono (0.0–1.0)
     // ── Modalità mono ────────────────────────────────────────────────────────
     // 0 = stereo normale, 1 = mono da L, 2 = mono da R, 3 = mono da L+R (mix)
     std::atomic<int>   mono_mode{0};

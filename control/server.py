@@ -109,6 +109,9 @@ class State:
             "gain": 0.0, "vol_pilot": 0.09, "vol_rds": 0.03,
             "vol_mono": 0.44, "vol_stereo": 0.44,
             "gain_l": 0.0, "gain_r": 0.0, "gains_linked": True, "mono_mode": 0,
+            "mute_l": False, "mute_r": False,
+            "phase_inv_r": False, "phase_offset": 0.0,
+            "test_mode": 0, "test_tone_hz": 1000.0, "test_tone_amp": 0.5,
             "preemph": 0.0, "deemph": 0.0,
             "debug": False, "mute": False,
             "tx_freq": 100.0, "tx_gain": -17.0,
@@ -230,7 +233,14 @@ def poll_modulatore():
                             elif k == "gain_l":    m["gain_l"]       = float(v)
                             elif k == "gain_r":    m["gain_r"]       = float(v)
                             elif k == "gains_linked": m["gains_linked"] = v == "1"
-                            elif k == "mono_mode": m["mono_mode"]    = int(v)
+                            elif k == "mono_mode":    m["mono_mode"]    = int(v)
+                            elif k == "mute_l":       m["mute_l"]       = v == "1"
+                            elif k == "mute_r":       m["mute_r"]       = v == "1"
+                            elif k == "phase_inv_r":  m["phase_inv_r"]  = v == "1"
+                            elif k == "phase_offset": m["phase_offset"] = float(v)
+                            elif k == "test_mode": m["test_mode"]    = int(v)
+                            elif k == "test_tone_hz":  m["test_tone_hz"]  = float(v)
+                            elif k == "test_tone_amp": m["test_tone_amp"] = float(v)
                             elif k == "vol_pilot": m["vol_pilot"]  = float(v)
                             elif k == "vol_rds":   m["vol_rds"]    = float(v)
                             elif k == "vol_mono":  m["vol_mono"]   = float(v)

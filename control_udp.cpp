@@ -196,9 +196,34 @@ void control_udp_thread(GlobalSettings& settings) {
             settings.gains_linked.store(on);
             std::cerr<<"GAINS_LINKED="<<(on?"1":"0")<<"\n";
 
+        } else if (startsWith("MUTE_L=", 7)) {
+            settings.mute_l.store(msg[7] == '1');
+            std::cerr << "MUTE_L=" << msg[7] << "\n";
+        } else if (startsWith("MUTE_R=", 7)) {
+            settings.mute_r.store(msg[7] == '1');
+            std::cerr << "MUTE_R=" << msg[7] << "\n";
+        } else if (startsWith("PHASE_INV_R=", 12)) {
+            settings.phase_inv_r.store(msg[12] == '1');
+            std::cerr << "PHASE_INV_R=" << msg[12] << "\n";
+        } else if (startsWith("PHASE_OFFSET=", 13)) {
+            float deg = std::strtof(msg.c_str()+13, nullptr);
+            if (deg >= 0.f && deg <= 360.f) { settings.phase_offset_deg.store(deg); std::cerr << "PHASE_OFFSET=" << deg << "\n"; }
+
         } else if (startsWith("MONO_MODE=", 10)) {
             int m = std::atoi(msg.c_str()+10);
             if (m>=0&&m<=3) { settings.mono_mode.store(m); std::cerr<<"MONO_MODE="<<m<<"\n"; }
+
+        } else if (startsWith("TEST_MODE=", 10)) {
+            int m = std::atoi(msg.c_str()+10);
+            if (m>=0&&m<=2) { settings.test_mode.store(m); std::cerr<<"TEST_MODE="<<m<<"\n"; }
+
+        } else if (startsWith("TEST_TONE_HZ=", 13)) {
+            float hz = std::strtof(msg.c_str()+13, nullptr);
+            if (hz>=10.f&&hz<=15000.f) { settings.test_tone_hz.store(hz); std::cerr<<"TEST_TONE_HZ="<<hz<<"\n"; }
+
+        } else if (startsWith("TEST_TONE_AMP=", 14)) {
+            float a = std::strtof(msg.c_str()+14, nullptr);
+            if (a>=0.f&&a<=1.f) { settings.test_tone_amp.store(a); std::cerr<<"TEST_TONE_AMP="<<a<<"\n"; }
 
         } else if (startsWith("MUTE=", 5)) {
             bool on = msg.size()>5 && (msg[5]=='1'||
@@ -278,11 +303,18 @@ void control_udp_thread(GlobalSettings& settings) {
         } else if (msg == "GET" || msg == "STATUS") {
             std::ostringstream out;
             // Audio
-            out << "GAIN="         << settings.input_gain_db.load()   << "\n";
+            out << "GAIN="         << settings.gain_l_db.load()       << "\n";  // alias di gain_l
             out << "GAIN_L="       << settings.gain_l_db.load()       << "\n";
             out << "GAIN_R="       << settings.gain_r_db.load()       << "\n";
             out << "GAINS_LINKED=" << (settings.gains_linked.load()?"1":"0") << "\n";
-            out << "MONO_MODE="    << settings.mono_mode.load()       << "\n";
+            out << "MUTE_L="       << settings.mute_l.load()           << "\n";
+            out << "MUTE_R="       << settings.mute_r.load()           << "\n";
+            out << "PHASE_INV_R="  << settings.phase_inv_r.load()      << "\n";
+            out << "PHASE_OFFSET=" << settings.phase_offset_deg.load() << "\n";
+            out << "MONO_MODE="    << settings.mono_mode.load()        << "\n";
+            out << "TEST_MODE="    << settings.test_mode.load()       << "\n";
+            out << "TEST_TONE_HZ=" << settings.test_tone_hz.load()    << "\n";
+            out << "TEST_TONE_AMP="<< settings.test_tone_amp.load()   << "\n";
             out << "MUTE="       << (settings.mute.load()?"1":"0")  << "\n";
             out << "DEBUG="      << (settings.debug.load()?"1":"0") << "\n";
             // Livelli
