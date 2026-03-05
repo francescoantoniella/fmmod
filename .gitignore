@@ -1,3 +1,5 @@
 build/
 rapi_setup/raspi_root/
 venv/
+__pycache__/
+control/__pycache__

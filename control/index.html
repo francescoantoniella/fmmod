@@ -71,6 +71,17 @@
         </div>
         <div style="font-family:var(--mono);font-size:16px;color:var(--text-mid);letter-spacing:1px" id="lbl-mono-mode">Stereo normale</div>
 
+        <!-- Sorgente Audio -->
+        <div style="display:flex;gap:5px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:8px">
+          <button id="btn-src-webradio" class="btn primary" style="flex:1;padding:4px 0;font-size:15px"
+                  onclick="selectSource('webradio')">WEBRADIO</button>
+          <button id="btn-src-audioin"  class="btn"         style="flex:1;padding:4px 0;font-size:15px"
+                  onclick="selectSource('audioin')">AUDIO IN</button>
+          <button id="btn-src-mpx"      class="btn"         style="flex:1;padding:4px 0;font-size:15px"
+                  onclick="selectSource('mpx')">MPX</button>
+        </div>
+        <div id="src-log" style="font-family:var(--mono);font-size:15px;color:var(--text-mid);min-height:16px;letter-spacing:1px"></div>
+
         <!-- Componenti MPX -->
         <div style="display:flex;gap:5px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:8px">
           <button id="btn-pilot"  class="btn primary" style="flex:1;padding:4px 0;font-size:15px" onclick="toggleMpx('pilot')">PILOT</button>
@@ -187,6 +198,7 @@
 
 
   </div>
+
 </div>
 
 <!-- ════════════════════════════════════════ TAB INGRESSO ═══ -->
@@ -360,6 +372,7 @@
 
 
   </div>
+
 </div>
 
 <!-- ════════════════════════════════════════ TAB INGRESSO ═══ -->
@@ -779,7 +792,29 @@
                    oninput="onTxNom(+this.value)">
             <div class="range-ends"><span>1 W</span><span>500 W</span></div>
           </div>
-        <div style="margin-top:12px;font-family:var(--mono);font-size:15px;color:var(--text-dim)">
+        <!-- Configurazione sorgenti -->
+        <div class="sep-row col-span-3"><span>SORGENTI AUDIO</span></div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">URL Webradio</div>
+          <input class="txt-input" id="cfg-url-webradio" type="url"
+                 value="http://nr9.newradio.it:9371/stream" placeholder="http://...">
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">AUDIO IN device</div>
+          <input class="txt-input" id="cfg-dev-audioin" type="text"
+                 value="hw:0,0" placeholder="hw:0,0">
+        </div>
+        <div class="ctrl-item">
+          <div class="ctrl-lbl">MPX device</div>
+          <input class="txt-input" id="cfg-dev-mpx" type="text"
+                 value="hw:1,0" placeholder="hw:1,0">
+        </div>
+        <div class="col-span-3" style="display:flex;gap:8px">
+          <button class="btn primary" onclick="srcCfgSave()" style="flex:1">💾 Salva configurazione sorgenti</button>
+        </div>
+
+        <div class="sep-row col-span-3"><span>IMPIANTO</span></div>
+        <div style="margin-top:12px;font-family:var(--mono);font-size:15px;color:var(--text-dim);grid-column:1/-1">
           ⚠ Parametri da impostare una sola volta all'installazione. Salvare in EEPROM dopo la modifica.
         </div>
       </div>

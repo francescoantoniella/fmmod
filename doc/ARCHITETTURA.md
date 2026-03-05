@@ -13,7 +13,8 @@
 9. [API HTTP](#9-api-http)
 10. [Comandi UDP modulatore](#10-comandi-udp-modulatore)
 11. [Installazione e deploy](#11-installazione-e-deploy)
-12. [Font offline](#12-font-offline)
+12. [Flowgraphs GNURadio](#12-flowgraphs-gnuradio-flowgraphs)
+13. [Font offline](#13-font-offline)
 
 ---
 
@@ -162,6 +163,12 @@ Chunk 480 campioni @ 48 kHz (10 ms)
 | `control/server.py` | Backend Bottle: API REST, thread, stato globale |
 | `control/storage.py` | Persistenza multi-gruppo su EEPROM AT24C512 |
 | `control/index.html` | UI single-page servita da Bottle |
+| `control/app.js` | Logica UI: polling, slider, RDS, temi, selettore sorgente |
+| `control/style.css` | Stile principale (variabili CSS, layout, componenti) |
+| `control/theme-dark.css` | Tema scuro (default) |
+| `control/theme-light.css` | Tema chiaro |
+| `control/theme-neon.css` | Tema neon verde |
+| `control/fonts.css` | Dichiarazioni `@font-face` per font locali |
 | `control/fonts/` | Font woff2 locali (offline, nessuna richiesta CDN) |
 
 ### Driver periferiche I2C/SPI (`drivers/`)
@@ -201,6 +208,14 @@ state.softstart_active
 state.serial_number
 ```
 
+### Auto-apply parametri
+
+All'avvio `server.py` esegue `auto_apply_settings()` in un thread separato: aspetta fino a 60 s che il modulatore risponda a `GET`, poi chiama `apply_params_to_modulator()` per inviare tutti i parametri salvati in EEPROM.
+
+`apply_params_to_modulator()` carica i gruppi `tx_audio`, `compressor`, `rds_cfg`, `rds_text`, `power_pid` dallo storage e invia i comandi UDP corrispondenti. È richiamabile in qualsiasi momento.
+
+`wait_and_apply(delay)` viene lanciata anche dopo `chain.start()` e `chain.restart()`: attende che il modulatore torni raggiungibile, poi ri-applica i parametri.
+
 All'avvio, `server.py` avvia automaticamente la catena webradio (`chain.start()`). Il risultato viene loggato ma un fallimento non blocca il server.
 
 ---
@@ -208,6 +223,26 @@ All'avvio, `server.py` avvia automaticamente la catena webradio (`chain.start()`
 ## 5. Interfaccia web (index.html)
 
 Applicazione single-page. **Nessuna dipendenza esterna a runtime** (font serviti localmente da `control/fonts/`).
+
+### Struttura file UI
+
+Il codice originariamente inline è stato estratto in file separati serviti da Bottle:
+
+| File | Contenuto |
+|------|-----------|
+| `index.html` | Solo struttura HTML e `<link>`/`<script>` |
+| `app.js` | Tutta la logica JS (polling, slider, RDS, temi, sorgente) |
+| `style.css` | CSS principale con variabili per tutti i temi |
+| `theme-dark.css` | Override variabili tema scuro |
+| `theme-light.css` | Override variabili tema chiaro |
+| `theme-neon.css` | Override variabili tema neon verde |
+| `fonts.css` | `@font-face` declarations |
+
+Il tema attivo viene salvato in `localStorage` (`fm_theme`) e ripristinato al ricaricamento. Il selettore cicla tra i temi disponibili tramite `cycleTheme()`.
+
+### Selettore sorgente audio
+
+Il tab TX include un pannello sorgente con tre pulsanti (WEBRADIO / AUDIO IN / MPX). La sorgente attiva viene sincronizzata dallo stato (`s.audio_source`) e la configurazione per sorgente (`s.audio_source_cfg`) popola i campi URL/device.
 
 ### Tab
 
@@ -713,6 +748,32 @@ DEBUG=0|1
 
 ## 11. Installazione e deploy
 
+### Script di sviluppo
+
+| Script | Uso |
+|--------|-----|
+| `compile.sh` | Shorthand per `cd build && make clean && make && cd ..` |
+| `deploy.sh` | Sync + build + restart su Raspberry Pi via rsync/SSH |
+| `import.sh` | Importa file singoli o `files.zip` da `~/Scaricati` nel progetto |
+| `pack.sh` | Crea `codebase.tgz` escludendo build, pycache, file raw |
+
+#### deploy.sh
+
+```bash
+./deploy.sh                  # sync + build C++ + restart fmmod+fmweb
+./deploy.sh --skip-build     # solo sync + restart
+./deploy.sh --web-only       # solo sync + restart fmweb
+./deploy.sh --skip-restart   # solo sync (e build)
+```
+
+Il target predefinito è `pi@192.168.76.103:/home/rfe/modulatore_2.0`.
+Esegue rsync escludendo `.git`, `build`, `__pycache__`, file raw/binari, poi lancia `cmake + make -j4` sul Pi e riavvia i servizi systemd.
+
+#### import.sh
+
+Cerca file per nome in `~/Scaricati`, `~/Downloads` e nella directory del progetto.
+Se trova `files.zip`, estrae i file mappati. Supporta `--deploy`, `--web-only`, `--skip-build` (passa le opzioni a `deploy.sh` dopo l'import).
+
 ### Dipendenze
 
 ```bash
@@ -790,7 +851,24 @@ systemctl enable --now fmmod fmweb
 
 ---
 
-## 12. Font offline
+## 12. Flowgraphs GNURadio (`flowgraphs/`)
+
+Flowgraph di test e analisi per lo sviluppo. Ogni `.grc` ha il corrispondente `.py` generato da GNURadio Companion.
+
+| File | Descrizione |
+|------|-------------|
+| `cos_sig.grc/.py` | Generatore di segnale cosinusoidale — utile per test MPX e calibrazione |
+| `cw.grc/.py` | Generatore CW (Morse) — genera burst RF per test antenna/PA |
+| `peak_tagger.py` | Tagger di picchi sul segnale FM — per analisi deviazione e clipping |
+| `rds_rx.py` | Ricevitore RDS base |
+| `rds_rx_peaks.py` | Ricevitore RDS con rilevamento picchi MPX |
+| `rds_rx_singh.py` | Ricevitore RDS con demodulazione variante Singh |
+
+I flowgraphs sono standalone e non dipendono dal modulatore C++. Richiedono GNURadio 3.10+.
+
+---
+
+## 13. Font offline
 
 L'interfaccia web non effettua richieste verso internet a runtime. I font sono serviti localmente da Bottle tramite la route `/fonts/<filename>`.
 

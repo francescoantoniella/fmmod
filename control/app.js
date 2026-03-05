@@ -431,6 +431,17 @@ async function pollStatus() {
 
     // ── Params ──
     const p = s.params || {};
+    // ── Sync sorgente audio ──────────────────────────────────────
+    if (s.audio_source) updateSourceUI(s.audio_source);
+    if (s.audio_source_cfg) {
+      const cfg = s.audio_source_cfg;
+      const u = document.getElementById('cfg-url-webradio');
+      const a = document.getElementById('cfg-dev-audioin');
+      const m = document.getElementById('cfg-dev-mpx');
+      if (u && cfg.webradio?.url)   u.value = cfg.webradio.url;
+      if (a && cfg.audioin?.device) a.value = cfg.audioin.device;
+      if (m && cfg.mpx?.device)     m.value = cfg.mpx.device;
+    }
     syncSlider('sl-txfreq','lbl-txfreq', p.tx_freq, v=>v?.toFixed(1)+' MHz');
     syncSlider('sl-txgain','lbl-txgain', p.tx_gain, v=>(v>=0?'+':'')+v?.toFixed(0)+' dB');
     syncSlider('sl-gain',  'lbl-gain',   p.gain,    v=>(v>=0?'+':'')+v?.toFixed(1)+' dB');
@@ -1206,3 +1217,133 @@ function cycleTheme() {
   const saved = localStorage.getItem('fm_theme');
   if (saved && saved !== 'dark') applyTheme(saved);
 })();
+
+// ─────────────────────────────────────────────
+// Sorgente Audio
+// ─────────────────────────────────────────────
+const SRC_LABELS = {
+  webradio: '🌐 WEBRADIO',
+  audioin:  '🎙 AUDIO IN',
+  mpx:      '📡 MPX',
+};
+
+function updateSourceUI(source) {
+  ['webradio','audioin','mpx'].forEach(s => {
+    const btn = document.getElementById('btn-src-' + s);
+    if (!btn) return;
+    btn.classList.toggle('primary', s === source);
+  });
+  const badge = document.getElementById('src-status-badge');
+  if (badge) {
+    badge.textContent = SRC_LABELS[source] ?? source;
+    badge.style.background = 'var(--green-dim)';
+    badge.style.color = 'var(--green)';
+    badge.style.borderColor = 'var(--green)';
+  }
+}
+
+function srcLog(msg, isErr) {
+  const el = document.getElementById('src-log');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = isErr ? 'var(--red)' : 'var(--text-mid)';
+}
+
+async function selectSource(src) {
+  if (!SRC_LABELS[src]) return;
+  srcLog('Cambio in corso…');
+  // Disabilita bottoni durante il cambio
+  ['webradio','audioin','mpx'].forEach(s => {
+    const b = document.getElementById('btn-src-' + s);
+    if (b) b.disabled = true;
+  });
+  try {
+    const r = await fetch('/api/source/select', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({source: src})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      updateSourceUI(src);
+      srcLog(d.msg ?? 'Sorgente attiva: ' + SRC_LABELS[src]);
+    } else {
+      srcLog('Errore: ' + (d.error ?? 'sconosciuto'), true);
+    }
+  } catch(e) {
+    srcLog('Errore di rete: ' + e.message, true);
+  } finally {
+    ['webradio','audioin','mpx'].forEach(s => {
+      const b = document.getElementById('btn-src-' + s);
+      if (b) b.disabled = false;
+    });
+  }
+}
+
+async function srcCfgSave() {
+  const payload = {};
+  const u = document.getElementById('cfg-url-webradio');
+  const a = document.getElementById('cfg-dev-audioin');
+  const m = document.getElementById('cfg-dev-mpx');
+  if (u) payload.url_webradio = u.value;
+  if (a) payload.dev_audioin  = a.value;
+  if (m) payload.dev_mpx      = m.value;
+  const r = await fetch('/api/source/config', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const d = await r.json();
+  srcLog(d.ok ? '✓ Configurazione sorgenti salvata' : 'Errore salvataggio', !d.ok);
+}
+
+// Funzioni chain esistenti (collegate ai controlli in tab-Service)
+async function chainSourceChanged() {
+  const sel = document.getElementById('chain-source');
+  if (!sel) return;
+  chainSourceShowRows(sel.value);
+}
+
+function chainSourceShowRows(src) {
+  const rows = {
+    'chain-row-url':   ['webradio'],
+    'chain-row-dev1':  ['alsa1'],
+    'chain-row-dev2':  ['alsa2','mpx_in'],
+    'chain-row-rate':  ['alsa1','alsa2','mpx_in'],
+    'chain-row-tone':  ['tone'],
+  };
+  for (const [id, srcs] of Object.entries(rows)) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = srcs.includes(src) ? 'grid' : 'none';
+  }
+}
+
+async function chainSaveCfg() {
+  const sel   = document.getElementById('chain-source');
+  const url   = document.getElementById('chain-url');
+  const dev1  = document.getElementById('chain-dev1');
+  const dev2  = document.getElementById('chain-dev2');
+  const rate  = document.getElementById('chain-rate');
+  const fg    = document.getElementById('chain-flowgraph');
+  const ar    = document.getElementById('tog-chain-restart');
+  const tf    = document.getElementById('chain-tone-freq');
+  const ta    = document.getElementById('chain-tone-amp');
+  const payload = {};
+  if (sel)  payload.source_type   = sel.value;
+  if (url)  payload.url           = url.value;
+  if (dev1) payload.device        = dev1.value;
+  if (dev2) payload.device2       = dev2.value;
+  if (rate) payload.sample_rate   = +rate.value;
+  if (fg)   payload.flowgraph     = fg.value;
+  if (ar)   payload.auto_restart  = ar.checked;
+  if (tf)   payload.tone_freq     = +tf.value;
+  if (ta)   payload.tone_amp      = +ta.value;
+  const r = await fetch('/api/chain/config', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const d = await r.json();
+  const log = document.getElementById('chain-log');
+  if (log) log.textContent += (d.ok !== false ? '✓ Config salvata\n' : '✗ Errore\n');
+}

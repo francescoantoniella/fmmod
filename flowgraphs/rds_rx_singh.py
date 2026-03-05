@@ -30,6 +30,7 @@ from gnuradio.qtgui import Range, RangeWidget
 from PyQt5 import QtCore
 import rds
 import sip
+from peak_tagger import PeakTagger
 
 
 
@@ -246,6 +247,26 @@ class rds_rx(gr.top_block, Qt.QWidget):
 
         self._qtgui_freq_sink_x_0_win = sip.wrapinstance(self.qtgui_freq_sink_x_0.qwidget(), Qt.QWidget)
         self.top_layout.addWidget(self._qtgui_freq_sink_x_0_win)
+        # ── Peak Tagger: MPX composito a 912 kHz ──────────────────────────
+        self.peak_tagger_mpx = PeakTagger(
+            samp_rate=samp_rate / decimation,   # 912000 Hz
+            fft_size=2048,
+            threshold_db=-80,       # mostra solo picchi sopra -80 dBFS
+            min_dist_hz=1000,       # almeno 1 kHz tra picchi (pilot, stereo, rds ben separati)
+            max_peaks=8,
+            tag_key="peak"
+        )
+
+        # ── Peak Tagger: audio demodulato a 48 kHz ────────────────────────────
+        self.peak_tagger_audio = PeakTagger(
+            samp_rate=48000,
+            fft_size=4096,
+            threshold_db=-80,       # mostra solo picchi rilevanti
+            min_dist_hz=50,         # 50 Hz di separazione minima
+            max_peaks=6,
+            tag_key="peak"
+        )
+
         self._gain_range = Range(0, 49.6, 1, 25, 200)
         self._gain_win = RangeWidget(self._gain_range, self.set_gain, "RF Gain", "counter_slider", float, QtCore.Qt.Horizontal)
         self.top_grid_layout.addWidget(self._gain_win, 2, 0, 1, 1)
@@ -306,7 +327,8 @@ class rds_rx(gr.top_block, Qt.QWidget):
         self.connect((self.analog_pll_refout_cc_0, 0), (self.blocks_multiply_xx_0, 0))
         self.connect((self.analog_pll_refout_cc_0, 0), (self.blocks_multiply_xx_0, 1))
         self.connect((self.analog_quadrature_demod_cf_0, 0), (self.freq_xlating_fir_filter_xxx_1_0, 0))
-        self.connect((self.analog_quadrature_demod_cf_0, 0), (self.qtgui_freq_sink_x_0, 0))
+        self.connect((self.analog_quadrature_demod_cf_0, 0), (self.peak_tagger_mpx, 0))
+        self.connect((self.peak_tagger_mpx, 0), (self.qtgui_freq_sink_x_0, 0))
         self.connect((self.analog_quadrature_demod_cf_0, 0), (self.rational_resampler_xxx_0, 0))
         self.connect((self.blocks_add_xx_0, 0), (self.analog_fm_deemph_0_0_0, 0))
         self.connect((self.blocks_complex_to_imag_0, 0), (self.blocks_multiply_xx_1, 1))
@@ -318,7 +340,8 @@ class rds_rx(gr.top_block, Qt.QWidget):
         self.connect((self.blocks_multiply_const_vxx_0, 0), (self.qtgui_freq_sink_x_1, 1))
         self.connect((self.blocks_multiply_const_vxx_0, 0), (self.qtgui_time_sink_x_0, 1))
         self.connect((self.blocks_multiply_const_vxx_0_0, 0), (self.audio_sink_0, 1))
-        self.connect((self.blocks_multiply_const_vxx_0_0, 0), (self.qtgui_freq_sink_x_1, 0))
+        self.connect((self.blocks_multiply_const_vxx_0_0, 0), (self.peak_tagger_audio, 0))
+        self.connect((self.peak_tagger_audio, 0), (self.qtgui_freq_sink_x_1, 0))
         self.connect((self.blocks_multiply_const_vxx_0_0, 0), (self.qtgui_time_sink_x_0, 0))
         self.connect((self.blocks_multiply_xx_0, 0), (self.blocks_complex_to_imag_0, 0))
         self.connect((self.blocks_multiply_xx_1, 0), (self.fir_filter_xxx_1_0, 0))

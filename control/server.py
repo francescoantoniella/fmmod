@@ -214,6 +214,80 @@ def send_cmd(cmd: str) -> str | None:
         log.warning(f"UDP send_cmd '{cmd}': {e}")
     return None
 
+def apply_params_to_modulator():
+    """Invia tutti i parametri salvati al modulatore. Chiamabile in qualsiasi momento."""
+    tx = storage.load_group("tx_audio")
+    if tx:
+        cmd_map = {
+            "gain": "GAIN", "gain_l": "GAIN_L", "gain_r": "GAIN_R",
+            "vol_pilot": "VOL_PILOT", "vol_rds": "VOL_RDS",
+            "vol_mono": "VOL_MONO", "vol_stereo": "VOL_STEREO",
+            "preemph": "PREEMPH", "deemph": "DEEMPH",
+            "tx_freq": "TX_FREQ", "tx_gain": "TX_GAIN",
+            "pi": "PI", "pty": "PTY", "af1": "AF1", "af2": "AF2",
+            "ta": "TA", "tp": "TP", "mono_mode": "MONO_MODE",
+        }
+        for k, cmd in cmd_map.items():
+            if k in tx: send_cmd(f"{cmd}={tx[k]}")
+        if "mute"         in tx: send_cmd(f"MUTE={'1' if tx['mute'] else '0'}")
+        if "ms"           in tx: send_cmd(f"MS={'1' if tx['ms'] else '0'}")
+        if "gains_linked" in tx: send_cmd(f"GAINS_LINKED={'1' if tx['gains_linked'] else '0'}")
+        with state.lock:
+            state.params.update({k: v for k, v in tx.items() if k in state.params})
+
+    comp = storage.load_group("compressor")
+    if comp:
+        cmd_map_c = {
+            "comp_thr": "COMP_THR", "comp_ratio": "COMP_RATIO",
+            "comp_knee": "COMP_KNEE", "comp_atk": "COMP_ATK",
+            "comp_rel": "COMP_REL", "comp_mu": "COMP_MU", "comp_lim": "COMP_LIM",
+        }
+        for k, cmd in cmd_map_c.items():
+            if k in comp: send_cmd(f"{cmd}={comp[k]}")
+        if "comp_en" in comp:
+            send_cmd(f"COMP_EN={'1' if comp['comp_en'] else '0'}")
+        with state.lock:
+            state.params.update({k: v for k, v in comp.items() if k in state.params})
+
+    rds_c = storage.load_group("rds_cfg")
+    rds_t = storage.load_group("rds_text")
+    if rds_c or rds_t:
+        with state.lock:
+            if rds_c:
+                for k in ("rt_mode","rt_alt_sec","ps_long","ps_cycle_sec",
+                          "radio_name","icecast_url","icecast_interval_sec"):
+                    if k in rds_c: state.rds_cfg[k] = rds_c[k]
+            if rds_t:
+                if "rt_fixed" in rds_t: state.rds_cfg["rt_fixed"] = rds_t["rt_fixed"]
+                if "rt_alt"   in rds_t: state.rds_cfg["rt_alt"]   = rds_t["rt_alt"]
+        # PS/RT gestiti da rds_manager_thread
+
+    pp = storage.load_group("power_pid")
+    if pp:
+        with state.lock:
+            if "power_target_w" in pp: state.power_target_w = pp["power_target_w"]
+            if "kp" in pp: state.pid.kp = pp["kp"]
+            if "ki" in pp: state.pid.ki = pp["ki"]
+            if "kd" in pp: state.pid.kd = pp["kd"]
+
+    log.info("[apply_params] parametri inviati al modulatore")
+
+
+def wait_and_apply(delay=2.0):
+    """Aspetta che il modulatore risponda dopo un riavvio, poi applica i parametri."""
+    import time as _time
+    deadline = _time.time() + 30
+    while _time.time() < deadline:
+        if send_cmd("GET"):
+            break
+        _time.sleep(1)
+    else:
+        log.warning("[apply_params] modulatore non raggiungibile dopo riavvio")
+        return
+    _time.sleep(delay)   # piccola pausa extra per stabilizzazione
+    apply_params_to_modulator()
+
+
 def poll_modulatore():
     """Ogni 200 ms: invia GET e aggiorna state.params / state.metering."""
     while True:
@@ -860,7 +934,10 @@ def api_chain_status():
 
 @app.route("/api/chain/start", method="POST")
 def api_chain_start():
-    return json_resp(chain.start())
+    result = chain.start()
+    if result.get("ok"):
+        threading.Thread(target=wait_and_apply, daemon=True).start()
+    return json_resp(result)
 
 @app.route("/api/chain/stop", method="POST")
 def api_chain_stop():
@@ -868,7 +945,10 @@ def api_chain_stop():
 
 @app.route("/api/chain/restart", method="POST")
 def api_chain_restart():
-    return json_resp(chain.restart())
+    result = chain.restart()
+    if result.get("ok"):
+        threading.Thread(target=wait_and_apply, daemon=True).start()
+    return json_resp(result)
 
 @app.route("/api/chain/config", method=["GET", "POST"])
 def api_chain_config():
@@ -935,6 +1015,22 @@ if __name__ == "__main__":
     threading.Thread(target=sensor_thread, daemon=True).start()
     # Thread RDS manager (PS cycling, RT cycling, Icecast)
     threading.Thread(target=rds_manager_thread, daemon=True).start()
+
+    # Auto-apply parametri al boot
+    def auto_apply_settings():
+        log.info("[startup] attendo modulatore...")
+        import time as _t
+        deadline = _t.time() + 60
+        while _t.time() < deadline:
+            if send_cmd("GET"): break
+            _t.sleep(2)
+        else:
+            log.warning("[startup] modulatore non raggiungibile")
+            return
+        apply_params_to_modulator()
+        log.info("[startup] auto-apply completato")
+
+    threading.Thread(target=auto_apply_settings, daemon=True).start()
 
     # Avvia la catena webradio all'avvio
     result = chain.start()
