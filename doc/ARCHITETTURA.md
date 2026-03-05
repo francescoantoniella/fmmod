@@ -92,23 +92,27 @@ Browser (index.html)
 
 ## 3. Modulatore C++
 
-### File sorgente
+### File sorgente (`src/`)
+
+I sorgenti C++ risiedono in `src/`. La libreria RDS è in `librds/` (separata).
 
 | File | Ruolo |
 |------|-------|
-| `main.cpp` | Entry point, parsing argomenti, avvio thread |
-| `audio_pipeline.cpp/.hpp` | Thread audio: lettura → DSP → upsampling → MPX → output |
-| `audio_input.cpp/.hpp` | Lettura PCM da stdin o UDP:9121 |
-| `compressor.hpp` | SingleBandCompressor (soglia, ratio, knee, att/rel, makeup, limiter) |
-| `mpx_modulator.hpp` | Generazione segnale MPX a 912 kHz con LUT sin; bypass condizionale per vol=0 su pilot/stereo/RDS |
-| `fm_modulator.hpp` | Modulazione FM → IQ int16 |
-| `upsampler.hpp` | Polyphase upsampler 48 k→ 912 k (fattore 19) |
-| `pluto_output.cpp/.hpp` | Uscita verso PlutoSDR (libiio) o stdout |
-| `control_udp.cpp/.hpp` | Thread controllo UDP:9120 (GET/SET parametri) |
-| `globals.hpp` | `GlobalSettings`: tutte le variabili `std::atomic<>` condivise |
-| `rds_manager.hpp` | Wrapper attorno a librds per PS/RT/PI/PTY/TA/AF1 |
+| `src/main.cpp` | Entry point, parsing argomenti, avvio thread |
+| `src/audio_pipeline.cpp/.hpp` | Thread audio: lettura → DSP → upsampling → MPX → output |
+| `src/audio_input.cpp/.hpp` | Lettura PCM da stdin o UDP:9121 |
+| `src/compressor.hpp` | SingleBandCompressor (soglia, ratio, knee, att/rel, makeup, limiter) |
+| `src/mpx_modulator.hpp` | Generazione segnale MPX a 912 kHz con LUT sin; bypass condizionale per vol=0 su pilot/stereo/RDS |
+| `src/fm_modulator.hpp` | Modulazione FM → IQ int16 |
+| `src/upsampler.hpp` | Polyphase upsampler 48 k→ 912 k (fattore 19) |
+| `src/pluto_output.cpp/.hpp` | Uscita verso PlutoSDR (libiio) o stdout |
+| `src/control_udp.cpp/.hpp` | Thread controllo UDP:9120 (GET/SET parametri) |
+| `src/globals.hpp` | `GlobalSettings`: tutte le variabili `std::atomic<>` condivise |
+| `src/rds_manager.hpp` | Wrapper attorno a librds per PS/RT/PI/PTY/TA/AF1 |
+| `src/iio_compat.hpp` | Compatibilità libiio v0/v1 |
+| `src/config.hpp` | Costanti di configurazione build-time |
+| `src/constants.hpp` | Costanti DSP condivise |
 | `librds/` | Libreria RDS (rds.c, rds_strings.c) |
-| `iio_compat.hpp` | Compatibilità libiio v0/v1 |
 
 ### Argomenti da riga di comando
 

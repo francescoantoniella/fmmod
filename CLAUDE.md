@@ -82,16 +82,17 @@ Browser → HTTP:8080 → server.py → UDP:9120 → control_udp.cpp → GlobalS
 ### Key Files
 | File | Purpose |
 |------|---------|
-| `main.cpp` | Entry point, CLI parsing, thread launch |
-| `audio_pipeline.cpp` | DSP loop: gain → limiter → compressor → upsampler → MPX → FM |
-| `control_udp.cpp` | UDP command parser; maps text commands to `GlobalSettings` atomics |
-| `globals.hpp` | All shared atomic state (audio params, RDS, compressor, PlutoSDR) |
-| `pluto_output.cpp` | libiio PlutoSDR output or stdout fallback |
+| `src/main.cpp` | Entry point, CLI parsing, thread launch |
+| `src/audio_pipeline.cpp` | DSP loop: gain → limiter → compressor → upsampler → MPX → FM |
+| `src/control_udp.cpp` | UDP command parser; maps text commands to `GlobalSettings` atomics |
+| `src/globals.hpp` | All shared atomic state (audio params, RDS, compressor, PlutoSDR) |
+| `src/pluto_output.cpp` | libiio PlutoSDR output or stdout fallback |
 | `librds/rds.c` | RDS encoding: PS, RT, PI, PTY, AF1, AF2, TA, TP, MS |
 | `control/server.py` | Bottle REST API + polling threads + PID power control |
 | `control/storage.py` | EEPROM persistence via smbus2 (6 config groups with CRC16) |
 | `control/chain_manager.py` | Audio source management (webradio, ALSA, tone, MPX-in) |
 | `control/index.html` | Single-page UI (offline, no CDN), 5 tabs: TX/RDS, Compressor, Power, History, System |
+| `control/app.js` | All UI JavaScript (polling, controls, themes, source selector) |
 
 ### State Persistence (EEPROM AT24C512)
 Six fixed-offset 256-byte blocks, each with a magic number and CRC16:

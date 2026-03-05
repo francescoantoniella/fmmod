@@ -8,14 +8,14 @@ add_definitions(-O3 -march=native)
 
 option(USE_LIBIIO "Enable PlutoSDR output via libiio" ON)
 
-include_directories(${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/librds)
+include_directories(${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/librds)
 
 set(SOURCES
-    main.cpp
-    audio_pipeline.cpp
-    audio_input.cpp
-    control_udp.cpp
-    pluto_output.cpp
+    src/main.cpp
+    src/audio_pipeline.cpp
+    src/audio_input.cpp
+    src/control_udp.cpp
+    src/pluto_output.cpp
     librds/rds.c
     librds/rds_strings.c
 )
