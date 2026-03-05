@@ -50,8 +50,9 @@ public:
         const float32x4_t v_vstereo = vdupq_n_f32(vol_stereo);
         const float32x4_t v_vrds    = vdupq_n_f32(vol_rds);
 
-        int i = 0;
-        for (; i <= num_samples - 4; i += 4) {
+        const unsigned n = static_cast<unsigned>(num_samples);
+        unsigned i = 0;
+        for (; i + 4 <= n; i += 4) {
             // Carica mono e stereo
             float32x4_t s = vmulq_f32(vld1q_f32(&mono_912k[i]), v_vmono);
 
@@ -83,8 +84,8 @@ public:
             const float32x4_t v_mone = vdupq_n_f32(-1.f);
             vst1q_f32(&mpx_out[i], vminq_f32(v_one, vmaxq_f32(v_mone, s)));
         }
-        // Residuo scalare
-        for (; i < num_samples; i++) {
+        // Residuo scalare (0–3 campioni)
+        for (; i < n; i++) {
             float s = vol_mono * mono_912k[i];
             if (pilot_on)  { s += vol_pilot  * lut[pilot_idx_];  pilot_idx_  = (pilot_idx_ +1) % mpx::PILOT_LUT_SIZE; }
             if (stereo_on) { s += vol_stereo * lut[stereo_idx_] * stereo_912k[i]; stereo_idx_ = (stereo_idx_+2) % mpx::PILOT_LUT_SIZE; }
