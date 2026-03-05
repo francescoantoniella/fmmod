@@ -4,6 +4,9 @@
 #include <cmath>
 #include <cstdio>
 #include <vector>
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#  include <arm_neon.h>
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -108,11 +111,6 @@ private:
 
 #if defined(__aarch64__)
     // ── Implementazione NEON float64 (AArch64 only) ───────────────────────────
-    // Strategia: per ogni campione input, calcoliamo le 19 fasi in output.
-    // Il loop interno (tap) accumula 2 double alla volta con vfmadd (float64x2).
-    // Layout [tap][phase] garantisce accesso coalescente ai coefficienti per fase.
-    #include <arm_neon.h>
-
     inline void _process_block_neon(const float* in_48k, int num_in, float* out_912k) {
         for (int i = 0; i < num_in; i++) {
             history[head] = static_cast<double>(in_48k[i]);
