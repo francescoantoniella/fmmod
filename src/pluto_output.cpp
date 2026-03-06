@@ -34,8 +34,7 @@ PlutoOutput::~PlutoOutput() {
     if (!config_.use_pluto) {
         writer_quit_.store(true);
         cv_not_empty_.notify_all();
-        if (writer_thread_.joinable())
-            writer_thread_.join();
+        if (writer_thread_.joinable()) writer_thread_.join();
     }
 #ifdef USE_LIBIIO
     if (iio_tx_buf_) iio_buffer_destroy(iio_tx_buf_);
@@ -167,7 +166,6 @@ void PlutoOutput::writer_loop() {
                 continue;
             buf = std::move(stdout_queue_.front());
             stdout_queue_.pop_front();
-            cv_not_full_.notify_one();   // sblocca un eventuale producer in attesa
         }
         size_t n = buf.size(), written = 0;
         while (written < n) {
@@ -178,19 +176,22 @@ void PlutoOutput::writer_loop() {
     }
 }
 
-/** Accoda dati per stdout con backpressure: blocca se la coda è piena (FIX #8). */
+/** Accoda dati per stdout: se la coda è piena, scarta il frame più vecchio (mai blocca il DSP). */
 void PlutoOutput::enqueue_stdout(const void* data, size_t bytes) {
+    if (writer_quit_.load()) return;
     std::vector<uint8_t> buf(static_cast<const uint8_t*>(data),
                               static_cast<const uint8_t*>(data) + bytes);
-    std::unique_lock<std::mutex> lock(queue_mutex_);
-    // Backpressure: aspetta finché c'è spazio nella coda
-    cv_not_full_.wait(lock, [this] {
-        return writer_quit_.load() || stdout_queue_.size() < MAX_QUEUE_DEPTH;
-    });
-    if (!writer_quit_.load()) {
+    {
+        std::unique_lock<std::mutex> lock(queue_mutex_);
+        if (stdout_queue_.size() >= MAX_QUEUE_DEPTH) {
+            stdout_queue_.pop_front();   // drop frame più vecchio
+            long d = ++dropped_frames_;
+            if (d == 1 || d % 100 == 0)
+                std::fprintf(stderr, "[output] consumer lento: %ld frame scartati\n", d);
+        }
         stdout_queue_.push_back(std::move(buf));
-        cv_not_empty_.notify_one();
     }
+    cv_not_empty_.notify_one();
 }
 
 // ============================================================================

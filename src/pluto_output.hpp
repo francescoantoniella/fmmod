@@ -52,8 +52,8 @@ private:
     static constexpr int    BUF_MS          = 10;
     static constexpr int    BUF_SAMPLES     = BUF_MS * mpx::SAMPLE_RATE_HZ / 1000; // = 9120 @ 912 kHz
 
-    /** Profondità massima coda stdout — backpressure (FIX #8). */
-    static constexpr size_t MAX_QUEUE_DEPTH = 8;
+    /** Profondità massima coda stdout — drop oldest on overflow (mai blocca il DSP). */
+    static constexpr size_t MAX_QUEUE_DEPTH = 32;
 
     // -----------------------------------------------------------------------
     // Stato
@@ -75,7 +75,7 @@ private:
     std::deque<std::vector<uint8_t>> stdout_queue_;
     std::mutex              queue_mutex_;
     std::condition_variable cv_not_empty_;
-    std::condition_variable cv_not_full_;
+    std::atomic<long>       dropped_frames_{0};
 
     void writer_loop();
     void enqueue_stdout(const void* data, size_t bytes);
