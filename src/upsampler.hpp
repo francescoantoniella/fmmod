@@ -23,7 +23,7 @@
 class PolyphaseUpsampler {
 private:
     static constexpr int F              = 19;
-    static constexpr int TAPS_PER_PHASE = 256;
+    static constexpr int TAPS_PER_PHASE = 64;   // 9.5 KB coeffs → fit in L1; >100dB stopband
     static constexpr int HISTORY_SIZE   = TAPS_PER_PHASE;
 
     // Coefficienti in double — layout [tap][phase] per accesso sequenziale in NEON

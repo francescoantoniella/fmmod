@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <thread>
 #include <vector>
+#include <chrono>
 #ifdef __linux__
 #include <unistd.h>
 #endif
@@ -399,13 +400,22 @@ void audio_processing_thread(GlobalSettings& settings, const Config& config) {
     }
 
     // ── Loop principale ───────────────────────────────────────────────────────
-    // Accumulatore fase in double per minimizzare errori di arrotondamento
     double tone_phase = 0.0;
+    // Timing diagnostics
+    using clk = std::chrono::steady_clock;
+    long overruns = 0, total_chunks = 0;
+    double max_proc_ms = 0.0;
+    auto t_diag = clk::now();
+
+    auto t_chunk_start = clk::now();
     while (true) {
         rds.update(settings);
 
         bool got = input.read(in_L_48k.data(), in_R_48k.data(), CHUNK_48K);
         if (!got) break;
+
+        auto t0 = clk::now();
+        double read_ms = std::chrono::duration<double, std::milli>(t0 - t_chunk_start).count();
 
         // ── Modalità test: sovrascrive l'input ───────────────────────────────
         const int tm = settings.test_mode.load(std::memory_order_relaxed);
@@ -483,6 +493,35 @@ void audio_processing_thread(GlobalSettings& settings, const Config& config) {
 
         // Output (Pluto o stdout)
         output.write(mpx_out.data(), CHUNK_912K);
+
+        // ── Timing diagnostics ───────────────────────────────────────────────
+        {
+            auto t1 = clk::now();
+            double proc_ms  = std::chrono::duration<double, std::milli>(t1 - t0).count();
+            double period_ms = read_ms + proc_ms;
+            ++total_chunks;
+            if (proc_ms > max_proc_ms) max_proc_ms = proc_ms;
+            if (proc_ms > 10.0) ++overruns;
+
+            // Segnala subito i picchi di latenza input (>15ms = 1.5x il budget)
+            if (read_ms > 15.0)
+                std::fprintf(stderr, "[timing] INPUT SPIKE: read=%.1fms proc=%.2fms\n",
+                             read_ms, proc_ms);
+
+            // Stampa ogni 5 secondi
+            auto elapsed = std::chrono::duration<double>(t1 - t_diag).count();
+            if (elapsed >= 5.0) {
+                std::fprintf(stderr,
+                    "[timing] chunks=%ld overruns=%ld(%.1f%%) proc_max=%.2fms period=%.2fms\n",
+                    total_chunks, overruns,
+                    100.0 * overruns / total_chunks,
+                    max_proc_ms,
+                    elapsed * 1000.0 / total_chunks);
+                total_chunks = 0; overruns = 0; max_proc_ms = 0.0;
+                t_diag = t1;
+            }
+            t_chunk_start = t1;
+        }
 
         // Debug ~1 s
         if (settings.debug.load(std::memory_order_relaxed) &&
