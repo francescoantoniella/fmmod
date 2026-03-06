@@ -152,7 +152,7 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    const: '1'
+    const: '0'
     maxoutbuf: '0'
     minoutbuf: '0'
     type: complex
@@ -160,7 +160,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [200, 460.0]
+    coordinate: [200, 468.0]
     rotation: 0
     state: disabled
 - name: analog_frequency_modulator_fc_0
@@ -202,6 +202,151 @@ blocks:
     coordinate: [24, 332.0]
     rotation: 0
     state: enabled
+- name: iio_attr_sink_0
+  id: iio_attr_sink
+  parameters:
+    affinity: ''
+    alias: ''
+    attr_type: '0'
+    channel: ''
+    comment: ''
+    device: ''
+    output: 'False'
+    uri: 'local:'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [872, 20.0]
+    rotation: 0
+    state: disabled
+- name: iio_attr_source_0
+  id: iio_attr_source
+  parameters:
+    address: int("0x123",0)
+    affinity: ''
+    alias: ''
+    attr_type: '0'
+    attribute: ''
+    channel: ''
+    comment: ''
+    device: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    output: 'False'
+    samples_per_update: '1024'
+    type: '0'
+    update_interval_ms: '1'
+    uri: 'local:'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [720, 500.0]
+    rotation: 0
+    state: disabled
+- name: iio_attr_updater_0
+  id: iio_attr_updater
+  parameters:
+    affinity: ''
+    alias: ''
+    attr: ''
+    comment: ''
+    interval: '1000'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    value: ''
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [720, 412.0]
+    rotation: 0
+    state: disabled
+- name: iio_dds_control_0
+  id: iio_dds_control
+  parameters:
+    alias: ''
+    comment: ''
+    enabled_dds1: 'False'
+    enabled_dds2: 'False'
+    freq_t1: '100000'
+    freq_t1_b: '100000'
+    freq_t1_b_q: '100000'
+    freq_t1_q: '100000'
+    freq_t2: '100000'
+    freq_t2_b: '100000'
+    freq_t2_b_q: '100000'
+    freq_t2_q: '100000'
+    phase_t1: '0'
+    phase_t1_b: '0'
+    phase_t1_b_q: '0'
+    phase_t1_q: '0'
+    phase_t2: '0'
+    phase_t2_b: '0'
+    phase_t2_b_q: '0'
+    phase_t2_q: '0'
+    scale_t1: '0'
+    scale_t1_b: '0'
+    scale_t1_b_q: '0'
+    scale_t1_q: '0'
+    scale_t2: '0'
+    scale_t2_b: '0'
+    scale_t2_b_q: '0'
+    scale_t2_q: '0'
+    uri: ip:analog
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [968, 132.0]
+    rotation: 0
+    state: disabled
+- name: iio_device_sink_0
+  id: iio_device_sink
+  parameters:
+    affinity: ''
+    alias: ''
+    buffer_size: '32768'
+    channels: '[]'
+    comment: ''
+    cyclic: 'False'
+    device: ''
+    device_phy: ''
+    interpolation: '1'
+    len_tag_key: ''
+    params: '[]'
+    uri: 'local:'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [944, 276.0]
+    rotation: 0
+    state: disabled
+- name: iio_device_source_0
+  id: iio_device_source
+  parameters:
+    affinity: ''
+    alias: ''
+    buffer_size: '32768'
+    channels: '[]'
+    comment: ''
+    decimation: '1'
+    device: ''
+    device_phy: ''
+    len_tag_key: packet_len
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    params: '[]'
+    uri: 'local:'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [936, 460.0]
+    rotation: 0
+    state: disabled
 - name: iio_pluto_sink_0
   id: iio_pluto_sink
   parameters:

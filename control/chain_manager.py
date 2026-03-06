@@ -57,6 +57,7 @@ class ChainManager:
 
         # ── Flowgraph standard ─────────────────────────────────────────
         "flowgraph":       "flowgraphs/rds_rx.py",
+#        "flowgraph":       "flowgraphs/iq.py",
 
         # ── Watchdog ───────────────────────────────────────────────────
         "auto_restart":    False,

@@ -71,13 +71,13 @@ class iq(gr.top_block, Qt.QWidget):
         self.tx_freq = tx_freq = int(99e6)
         self.samp_rate = samp_rate = 912000
         self.mute = mute = 0
-        self.att = att = 17
+        self.att = att = 60
 
         ##################################################
         # Blocks
         ##################################################
 
-        self._att_range = Range(0, 60, 1, 17, 200)
+        self._att_range = Range(0, 60, 1, 60, 200)
         self._att_win = RangeWidget(self._att_range, self.set_att, "Attenuazione RF", "counter_slider", float, QtCore.Qt.Horizontal)
         self.top_layout.addWidget(self._att_win)
         self.xmlrpc_server_0 = SimpleXMLRPCServer(('localhost', 8081), allow_none=True)

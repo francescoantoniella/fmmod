@@ -2,7 +2,7 @@
 # deploy.sh — Sync, build e restart su Raspberry Pi
 set -e
 
-RPI=pi@192.168.76.103
+RPI=rfe@192.168.76.103
 REMOTE_DIR=/home/rfe/modulatore_2.0
 BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
