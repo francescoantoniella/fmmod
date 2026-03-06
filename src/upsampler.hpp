@@ -7,6 +7,10 @@
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #  include <arm_neon.h>
 #endif
+#ifdef __SSE__
+#  include <xmmintrin.h>
+#  include <pmmintrin.h>
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -23,24 +27,23 @@
 class PolyphaseUpsampler {
 private:
     static constexpr int F              = 19;
-    static constexpr int TAPS_PER_PHASE = 64;   // 9.5 KB coeffs → fit in L1; >100dB stopband
-    static constexpr int HISTORY_SIZE   = TAPS_PER_PHASE;
+    static constexpr int TAPS_PER_PHASE = 32;   // 32×19×4B = 2.4KB → fits in L1; >100dB stopband
+    static constexpr int HISTORY_SIZE   = TAPS_PER_PHASE;  // power of 2, mask works
 
-    // Coefficienti in double — layout [tap][phase] per accesso sequenziale in NEON
-    // (durante il MAC iteriamo su tap con fase fissa → colonna contigua in memoria)
-    alignas(16) double coeffs[TAPS_PER_PHASE][F];
-    alignas(16) double history[HISTORY_SIZE];
+    // Coefficienti float32 — layout [tap][phase]
+    alignas(16) float coeffs[TAPS_PER_PHASE][F];
+    alignas(16) float history[HISTORY_SIZE];
     int head = 0;
 
 public:
     PolyphaseUpsampler() {
         static constexpr int TOTAL_TAPS = F * TAPS_PER_PHASE;
-        for (int i = 0; i < HISTORY_SIZE; i++) history[i] = 0.0;
+        for (int i = 0; i < HISTORY_SIZE; i++) history[i] = 0.f;
 
+        // Calcola coefficienti in double (precisione di design), poi converti in float
         const double fc     = 15500.0 / 912000.0;
         const double center = (TOTAL_TAPS - 1) / 2.0;
 
-        // Calcola e trascrivi in layout [tap][phase]
         double raw[F][TAPS_PER_PHASE];
         for (int p = 0; p < F; p++) {
             double phase_sum = 0.0;
@@ -49,7 +52,6 @@ public:
                 double val = (std::abs(n) < 1e-11)
                            ? 2.0 * fc
                            : std::sin(2.0 * M_PI * fc * n) / (M_PI * n);
-
                 double arg    = (double)(t * F + p) / (double)(TOTAL_TAPS - 1);
                 double window = 0.35875
                               - 0.48829 * std::cos(2.0 * M_PI * arg)
@@ -61,10 +63,10 @@ public:
             double scale = 1.0 / phase_sum;
             for (int t = 0; t < TAPS_PER_PHASE; t++) raw[p][t] *= scale;
         }
-        // Trascrivi in layout [tap][phase]
+        // Trascrivi in layout [tap][phase], cast a float
         for (int t = 0; t < TAPS_PER_PHASE; t++)
             for (int p = 0; p < F; p++)
-                coeffs[t][p] = raw[p][t];
+                coeffs[t][p] = static_cast<float>(raw[p][t]);
     }
 
     void debug_freq_response() const {
@@ -85,7 +87,7 @@ public:
     }
 
     inline void process_block(const float* in_48k, int num_in, float* out_912k) {
-#if defined(__aarch64__)
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
         _process_block_neon(in_48k, num_in, out_912k);
 #else
         _process_block_scalar(in_48k, num_in, out_912k);
@@ -93,46 +95,41 @@ public:
     }
 
 private:
-    // ── Implementazione scalare double ────────────────────────────────────────
+    // ── Implementazione scalare float32 ──────────────────────────────────────
     inline void _process_block_scalar(const float* in_48k, int num_in, float* out_912k) {
         for (int i = 0; i < num_in; i++) {
-            history[head] = static_cast<double>(in_48k[i]);
+            history[head] = in_48k[i];
             for (int p = 0; p < F; p++) {
-                double sum = 0.0;
+                float sum = 0.f;
                 for (int t = 0; t < TAPS_PER_PHASE; t++) {
                     int idx = (head - t + HISTORY_SIZE) & (HISTORY_SIZE - 1);
                     sum += history[idx] * coeffs[t][p];
                 }
-                out_912k[i * F + p] = static_cast<float>(sum);
+                out_912k[i * F + p] = sum;
             }
             head = (head + 1) & (HISTORY_SIZE - 1);
         }
     }
 
-#if defined(__aarch64__)
-    // ── Implementazione NEON float64 (AArch64 only) ───────────────────────────
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    // ── NEON float32x4: 4 tap/ciclo, ARMv7 + AArch64 ────────────────────────
+    // TAPS_PER_PHASE=32 è multiplo di 4 → nessun residuo
     inline void _process_block_neon(const float* in_48k, int num_in, float* out_912k) {
         for (int i = 0; i < num_in; i++) {
-            history[head] = static_cast<double>(in_48k[i]);
+            history[head] = in_48k[i];
 
             for (int p = 0; p < F; p++) {
-                float64x2_t acc = vdupq_n_f64(0.0);
-                int t = 0;
-                // Loop principale: 2 tap alla volta
-                for (; t <= TAPS_PER_PHASE - 2; t += 2) {
+                float32x4_t acc = vdupq_n_f32(0.f);
+                for (int t = 0; t < TAPS_PER_PHASE; t += 4) {
                     int i0 = (head - t     + HISTORY_SIZE) & (HISTORY_SIZE - 1);
                     int i1 = (head - t - 1 + HISTORY_SIZE) & (HISTORY_SIZE - 1);
-                    float64x2_t h_vec = { history[i0], history[i1] };
-                    float64x2_t c_vec = { coeffs[t][p], coeffs[t+1][p] };
-                    acc = vfmaq_f64(acc, h_vec, c_vec);
+                    int i2 = (head - t - 2 + HISTORY_SIZE) & (HISTORY_SIZE - 1);
+                    int i3 = (head - t - 3 + HISTORY_SIZE) & (HISTORY_SIZE - 1);
+                    float32x4_t h_vec = { history[i0], history[i1], history[i2], history[i3] };
+                    float32x4_t c_vec = { coeffs[t][p], coeffs[t+1][p], coeffs[t+2][p], coeffs[t+3][p] };
+                    acc = vfmaq_f32(acc, h_vec, c_vec);
                 }
-                // Residuo (TAPS_PER_PHASE=128 è pari, non serve)
-                double sum = vaddvq_f64(acc);
-                for (; t < TAPS_PER_PHASE; t++) {
-                    int idx = (head - t + HISTORY_SIZE) & (HISTORY_SIZE - 1);
-                    sum += history[idx] * coeffs[t][p];
-                }
-                out_912k[i * F + p] = static_cast<float>(sum);
+                out_912k[i * F + p] = vaddvq_f32(acc);
             }
 
             head = (head + 1) & (HISTORY_SIZE - 1);
