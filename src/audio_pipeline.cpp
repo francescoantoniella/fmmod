@@ -503,8 +503,8 @@ void audio_processing_thread(GlobalSettings& settings, const Config& config) {
             if (proc_ms > max_proc_ms) max_proc_ms = proc_ms;
             if (proc_ms > 10.0) ++overruns;
 
-            // Segnala subito i picchi di latenza input (>15ms = 1.5x il budget)
-            if (read_ms > 15.0)
+            // Segnala picchi di latenza input anomali (>50ms = 5x il budget)
+            if (read_ms > 50.0)
                 std::fprintf(stderr, "[timing] INPUT SPIKE: read=%.1fms proc=%.2fms\n",
                              read_ms, proc_ms);
 
